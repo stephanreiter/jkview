@@ -25,7 +25,7 @@
 
     <script>
         var container;
-        var camera, scene, renderer;
+        var camera, controls, scene, renderer, mesh;
 
         init();
         animate();
@@ -76,7 +76,7 @@
             geometry.sortFacesByMaterialIndex(); // huge speedup!
 
             // create a mesh using the geometry
-            var mesh = new THREE.Mesh(geometry, materialArray);
+            mesh = new THREE.Mesh(geometry, materialArray);
             scene.add(mesh);
 
             camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
@@ -91,7 +91,7 @@
             container.appendChild(renderer.domElement);
 
             // Controls
-            var controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.rotateSpeed = 0.25;
             controls.zoomSpeed = 0.25;
             controls.target.copy(geometry.boundingSphere.center); // center of the scene
@@ -99,6 +99,7 @@
             controls.addEventListener('change', animate);
 
             window.addEventListener('resize', onWindowResize, false);
+            document.addEventListener('dblclick', onDblClick, false);
 
             // Load the textures into our materials
             var loader = new THREE.TextureLoader();
@@ -121,6 +122,65 @@
             camera.updateProjectionMatrix();
             renderer.setSize(width, height);
             animate();
+        }
+
+        var nextTarget = null;
+        function doUpdateTarget() {
+            const maxDist = 5;
+
+            if (nextTarget == null) {
+                return;
+            }
+
+            var doneTarget = false, donePos = false;
+
+            var delta = new THREE.Vector3;
+            delta.subVectors(nextTarget, controls.target);
+            if (delta.length() > 0.1) {
+                delta.setLength(0.1);
+            }
+            else {
+                doneTarget = true;
+            }
+            controls.target.add(delta);
+
+            delta.subVectors(nextTarget, camera.position);
+            if (delta.length() > maxDist) {
+                delta.setLength(0.1);
+                camera.position.add(delta);
+            }
+            else {
+                donePos = true;
+            }
+
+            controls.update();
+            animate();
+
+            if (doneTarget && donePos) {
+                nextTarget = null;
+            }
+            else {
+                window.setTimeout(doUpdateTarget, 10);
+            }
+        }
+
+        function updateTarget(pos) {
+            nextTarget = pos;
+            doUpdateTarget();
+        }
+
+        function onDblClick(event) {
+            var x = (event.clientX / window.innerWidth) * 2 - 1;
+            var y = -(event.clientY / window.innerHeight) * 2 + 1;
+            var dir = new THREE.Vector3(x, y, -1)
+            dir.unproject(camera)
+
+            var ray = new THREE.Raycaster(camera.position, dir.sub(camera.position).normalize())
+            var intersects = ray.intersectObject(mesh);
+            if (intersects.length > 0) {
+                var first = intersects[0];
+                updateTarget(first.point);
+            }
         }
 
         function animate() {
