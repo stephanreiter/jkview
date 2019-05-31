@@ -1,9 +1,8 @@
 import io
 import itertools
 import struct
-import sys
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageFilter
 
 
 def _decode_16bit(data, color_extraction):
@@ -67,7 +66,7 @@ def _set_alpha(rgba, lhs, rhs):
     return (rgba[0], rgba[1], rgba[2], 0) if lhs == rhs else rgba
 
 
-def _read_textures(f, color_extraction, count, colormap):
+def _read_textures(f, color_extraction, count, colormap, censor):
     # load the headers
     for i in range(count):
         mat_type, transparent_color, res1, res2, res3, res4, res5, res6, res7, idx = struct.unpack(
@@ -118,12 +117,17 @@ def _read_textures(f, color_extraction, count, colormap):
         x = bytes(itertools.chain.from_iterable(pixel_bytes))
         img = Image.frombytes('RGBA', (org_width, org_height), x)
         img = ImageOps.flip(img)
+
+        # if we are asked to censor content, then blur the image
+        if censor:
+            img = img.filter(ImageFilter.GaussianBlur(16))
+
         frames.append(img)
 
     return _save_frames(frames)
 
 
-def make_texture_from_file(f, colormap=None):
+def make_texture_from_file(f, colormap=None, censor=False):
     ident, version, mat_type, count, res1, res2 = struct.unpack(
         'Iiiiii', f.read(24))
     if ident != 542392653 or version != 50:
@@ -141,15 +145,10 @@ def make_texture_from_file(f, colormap=None):
     if mat_type == 0:
         return _read_colors(f, color_extraction, count, colormap)
     elif mat_type == 2:
-        return _read_textures(f, color_extraction, count, colormap)
+        return _read_textures(f, color_extraction, count, colormap, censor)
     else:
         raise Exception("Invalid file!")
 
 
-def make_texture_from_bytes(b, colormap=None):
-    return make_texture_from_file(io.BytesIO(b), colormap=colormap)
-
-
-if __name__ == "__main__":
-    with open(sys.argv[1], 'rb') as f:
-        make_texture_from_file(f)
+def make_texture_from_bytes(b, colormap=None, censor=False):
+    return make_texture_from_file(io.BytesIO(b), colormap=colormap, censor=censor)

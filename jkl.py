@@ -1,13 +1,13 @@
 import io
 import re
 import struct
-import sys
 
 SUBSECTION_RE = re.compile(br'(.+)\s+\d+\Z')  # [ITEM TYPE] [COUNT]EOL
 ITEM_RE = re.compile(br'(\d+):')  # [IDX]: ...
 CMP_RE = re.compile(br'(\d+):\s+(\S+)')  # [IDX]: [FILENAME]
 # [IDX]: [FILENAME] 1 1
-MATERIAL_RE = re.compile(br'(\d+):\s+(\S+)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
+MATERIAL_RE = re.compile(
+    br'(\d+):\s+(\S+)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
 POSXYZ_RE = re.compile(
     br'(\d+):\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')  # [IDX]: [F] [F] [F]
 TEXUV_RE = re.compile(
@@ -20,6 +20,7 @@ SECTOR_COLORMAP_RE = re.compile(br'COLORMAP\s+(\d+)')
 SECTOR_SURFACES_RE = re.compile(br'SURFACES\s+(\d+)\s+(\d+)')
 #SECTOR_EXTRALIGHT_RE = re.compile(br'EXTRA\s+LIGHT\s+(-?\d*(\.\d+)?)')
 #SECTOR_TINT_RE = re.compile(br'TINT\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
+
 
 def _get_surface_rest_re(nverts):
     text = br'\s+'
@@ -121,7 +122,8 @@ class JklFile:
                     uv_idx = int(match.group(2 * i + 2))
                     intensity = float(match.group(2 * nverts + i * 2 + 1))
 
-                    uv = (0.0, 0.0) if uv_idx == -1 else (uvs[uv_idx][0] * uv_scale, uvs[uv_idx][1] * uv_scale)
+                    uv = (0.0, 0.0) if uv_idx == - \
+                        1 else (uvs[uv_idx][0] * uv_scale, uvs[uv_idx][1] * uv_scale)
                     diffuse = min(intensity, 1.0) + extra_light
                     vertices.append([xyzs[xyz_idx], uv, diffuse])
 
@@ -222,8 +224,3 @@ def read_from_file(f):
 
 def read_from_bytes(b):
     return read_from_file(io.BytesIO(b))
-
-
-if __name__ == "__main__":
-    with open(sys.argv[1], 'rt') as f:
-        jklfile = read_from_file(f)

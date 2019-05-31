@@ -1,10 +1,7 @@
 import io
 import re
 import struct
-import sys
 
-#TYPE_RE = re.compile(br'TYPE\s+(\d+)')
-#SEQ_RE = re.compile(br'SEQ\s+(\d+)')
 ITEM_RE = re.compile(
     br'(\d+):\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(-?\d+)\s+(-?\d+)')
 
@@ -50,9 +47,3 @@ def read_from_file(f):
 
 def read_from_bytes(b):
     return read_from_file(io.BytesIO(b))
-
-
-if __name__ == "__main__":
-    with open(sys.argv[1], 'rt') as f:
-        episode = read_from_file(f)
-        print(episode.title, episode.levels)

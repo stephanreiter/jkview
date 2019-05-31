@@ -46,19 +46,20 @@ def open_gob_file(filename):
             if idx != -1:
                 name = name[:idx]
             name = name.lower()  # CASE INSENSITIVE
-            name = name.replace(b'\\', b'/') # use forward slashes
+            name = name.replace(b'\\', b'/')  # use forward slashes
             toc[name] = (offset, length)
 
         return GobFile(filename, toc)
 
 
 class MultiGob:
-    def __init__(self, gobs):
+    def __init__(self, gobs, filenames):
         self.gobs = gobs
+        self.filenames = filenames
         toc = {}
-        for gob in gobs:
-            for k in gob.ls():
-                toc[k] = gob
+        for i in range(len(gobs)):
+            for k in gobs[i].ls():
+                toc[k] = (gobs[i], filenames[i])
         self.toc = toc
 
     def __enter__(self):
@@ -83,15 +84,19 @@ class MultiGob:
     def ls(self):
         return self.toc.keys()
 
+    def src(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        return self.toc[name][1]
+
     def read(self, name):
         name = name.lower()  # CASE INSENSITIVE
-        gob = self.toc[name]
+        gob = self.toc[name][0]
         return gob.read(name)
 
 
 def open_gob_files(filenames):
     gobs = [open_gob_file(f) for f in filenames]
-    return MultiGob(gobs)
+    return MultiGob(gobs, filenames)
 
 
 if __name__ == "__main__":

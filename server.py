@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, Response, render_template, request
 from flask_caching import Cache # pip3 install Flask-Caching
 
 import json
@@ -34,9 +34,10 @@ def _atomically_dump(f, target_path):
 
 
 @app.route('/level/<level_id>.js')
-@cache.cached(timeout=50)
+@cache.cached(timeout=50, query_string=True)
 def level_data(level_id):
     level_id = int(level_id)  # sanitize
+    censor = request.args.get('ownsgame') != '1'
 
     gob_path = os.path.join('downloads', '{}.gob'.format(level_id))
     if not os.path.isfile(gob_path):
@@ -57,15 +58,17 @@ def level_data(level_id):
                         _atomically_dump(gob_file, gob_path)
                     break
 
-    surfaces, texture_data = loader.load_level_from_file(gob_path)
+    surfaces, texture_data = loader.load_level_from_file(gob_path, censor=censor)
 
     result = 'texcount = {};\n'.format(len(texture_data))
     result += 'surfaces = ' + json.dumps(surfaces) + ';\n'
     result += 'textures = ' + json.dumps(texture_data) + ';\n'
-    return result
+    return Response(result, mimetype='application/javascript')
 
 
 @app.route('/level/<level_id>.html')
-@cache.cached(timeout=50)
 def level_viewer(level_id):
-    return render_template('viewer.html', level_id=level_id)
+    js_path = level_id + '.js'
+    if request.args.get('ownsgame') == '1':
+        js_path += '?ownsgame=1'
+    return render_template('viewer.html', level_js=js_path)

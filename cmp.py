@@ -1,6 +1,5 @@
 import io
 import struct
-import sys
 
 
 def read_from_file(f):
@@ -12,7 +11,7 @@ def read_from_file(f):
         colors = []
         rgbs = f.read(256 * 3)
         for i in range(0, 768, 3):
-            colors.append((rgbs[i], rgbs[i + 1], rgbs[i + 2], 255)) # RGBA
+            colors.append((rgbs[i], rgbs[i + 1], rgbs[i + 2], 255))  # RGBA
 
         for i in range(64):
             intensities = f.read(256)
@@ -26,8 +25,3 @@ def read_from_file(f):
 
 def read_from_bytes(b):
     return read_from_file(io.BytesIO(b))
-
-
-if __name__ == "__main__":
-    with open(sys.argv[1], 'rb') as f:
-        print(read_from_file(f))
