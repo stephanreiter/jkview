@@ -13,7 +13,7 @@ POSXYZ_RE = re.compile(
 TEXUV_RE = re.compile(
     br'(\d+):\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')  # [IDX]: [F] [F]
 SURFACE_RE = re.compile(
-    br'(\d+):\s+(\-?\d+)\s+(0x[0-9a-f]+)\s+(0x[0-9a-f]+)\s+(\-?\d+)\s+(\-?\d+)\s+(\-?\d+)\s+(\-?\d+)\s+(-?\d*(\.\d+)?)\s+(\-?\d+)')
+    br'(\d+):\s+(\-?\d+)\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s+(\-?\d+)\s+(\-?\d+)\s+(\-?\d+)\s+(\-?\d+)\s+(-?\d*(\.\d+)?)\s+(\-?\d+)')
 
 SECTOR_RE = re.compile(br'SECTOR\s+(\d+)')
 SECTOR_COLORMAP_RE = re.compile(br'COLORMAP\s+(\d+)')
