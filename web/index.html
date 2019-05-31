@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Dark Forces 2: Jedi Knight level preview powered by The Massassi Temple</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            font-family: Monospace;
+            background-color: #444444;
+            margin: 0px;
+            overflow: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="container"></div>
+
+    <script src="js/three.js"></script>
+    <script src="js/controls/OrbitControls.js"></script>
+
+    <script src="level.js"></script>
+
+    <script>
+        var container;
+        var camera, scene, renderer;
+
+        init();
+        animate();
+
+        function init() {
+            container = document.getElementById('container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x444444);
+
+            //scene.add(new THREE.AmbientLight(0xcccccc));
+
+            var materialArray = [];
+            for (var i = 0; i < texcount; ++i) {
+                materialArray.push(new THREE.MeshBasicMaterial());
+            }
+
+            var geometry = new THREE.Geometry();
+            geometry.faceVertexUvs[0] = [];
+            geometry.uvsNeedUpdate = true;
+            for (var i = 0; i < surfaces.length; ++i) {
+                var verts = surfaces[i]['vertices'];
+                var normal = surfaces[i]['normal'];
+                var texture = surfaces[i]['texture'];
+
+                var v0 = geometry.vertices.length;
+                for (var v = 0; v < verts.length; ++v) {
+                    var pos = verts[v][0];
+                    geometry.vertices.push(new THREE.Vector3(pos[0], pos[1], pos[2]));
+                }
+
+                var n = new THREE.Vector3(normal[0], normal[1], normal[2]);
+                for (var v = 2; v < verts.length; ++v) {
+                    var v2 = v0 + v;
+                    var face = new THREE.Face3(v0, v2 - 1, v2, n);
+                    face.materialIndex = texture;
+                    geometry.faces.push(face);
+
+                    geometry.faceVertexUvs[0].push([
+                        new THREE.Vector2(verts[0][1][0] / 256, verts[0][1][1] / 256),
+                        new THREE.Vector2(verts[v - 1][1][0] / 256, verts[v - 1][1][1] / 256),
+                        new THREE.Vector2(verts[v][1][0] / 256, verts[v][1][1] / 256)
+                    ]);
+                }
+            }
+
+            geometry.computeBoundingSphere();
+            geometry.sortFacesByMaterialIndex(); // huge speedup!
+
+            // create a mesh using the geometry
+            var mesh = new THREE.Mesh(geometry, materialArray);
+            scene.add(mesh);
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+            camera.up.set(0, 0, 1);
+            camera.position.copy(geometry.boundingSphere.center);
+            camera.position.sub(new THREE.Vector3(0, 1, 0));
+            scene.add(camera);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer.domElement);
+
+            // Controls
+            var controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.rotateSpeed = 0.25;
+            controls.zoomSpeed = 0.25;
+            controls.target.copy(geometry.boundingSphere.center); // center of the scene
+            controls.update();
+            controls.addEventListener('change', animate);
+
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Load the textures into our materials
+            var loader = new THREE.TextureLoader();
+            for (var i = 0; i < textures.length; ++i) {
+                var texture = loader.load(textures[i][0]);
+                texture.wrapS = THREE.RepeatWrapping;
+                texture.wrapT = THREE.RepeatWrapping;
+                materialArray[i].map = texture;
+            }
+
+            THREE.DefaultLoadingManager.onProgress = function (item, loaded, total) {
+                animate();
+            };
+        }
+
+        function onWindowResize() {
+            var width = window.innerWidth;
+            var height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+            animate();
+        }
+
+        function animate() {
+            // don't loop: requestAnimationFrame(animate);
+            render();
+        }
+
+        function render() {
+            renderer.render(scene, camera);
+        }
+    </script>
+
+</body>
+
+</html>
