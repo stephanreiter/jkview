@@ -39,7 +39,7 @@
             //scene.add(new THREE.AmbientLight(0xcccccc));
 
             var materialArray = [];
-            for (var i = 0; i < texcount; ++i) {
+            for (var i = 0; i < texsizes.length; ++i) {
                 materialArray.push(new THREE.MeshBasicMaterial());
             }
 
@@ -50,6 +50,7 @@
                 var verts = surfaces[i]['vertices'];
                 var normal = surfaces[i]['normal'];
                 var texture = surfaces[i]['texture'];
+                var texsize = texsizes[texture];
 
                 var v0 = geometry.vertices.length;
                 for (var v = 0; v < verts.length; ++v) {
@@ -65,9 +66,33 @@
                     geometry.faces.push(face);
 
                     geometry.faceVertexUvs[0].push([
-                        new THREE.Vector2(verts[0][1][0] / 256, verts[0][1][1] / 256),
-                        new THREE.Vector2(verts[v - 1][1][0] / 256, verts[v - 1][1][1] / 256),
-                        new THREE.Vector2(verts[v][1][0] / 256, verts[v][1][1] / 256)
+                        new THREE.Vector2(verts[0][1][0] / texsize[0], verts[0][1][1] / texsize[1]),
+                        new THREE.Vector2(verts[v - 1][1][0] / texsize[0], verts[v - 1][1][1] / texsize[1]),
+                        new THREE.Vector2(verts[v][1][0] / texsize[0], verts[v][1][1] / texsize[1])
+                    ]);
+                }
+            }
+
+            for (var i = 0; i < model_surfaces.length; ++i) {
+                var verts = model_surfaces[i]['vertices'];
+                var texture = model_surfaces[i]['texture'];
+                var texsize = texsizes[texture];
+
+                var v0 = geometry.vertices.length;
+                for (var v = 0; v < verts.length; ++v) {
+                    var pos = verts[v][0];
+                    geometry.vertices.push(new THREE.Vector3(pos[0], pos[1], pos[2]));
+                }
+
+                for (var v = 2; v < verts.length; ++v) {
+                    var v2 = v0 + v;
+                    var face = new THREE.Face3(v0, v2 - 1, v2);
+                    face.materialIndex = texture;
+                    geometry.faces.push(face);
+                    geometry.faceVertexUvs[0].push([
+                        new THREE.Vector2(verts[0][1][0] / texsize[0], verts[0][1][1] / texsize[1]),
+                        new THREE.Vector2(verts[v - 1][1][0] / texsize[0], verts[v - 1][1][1] / texsize[1]),
+                        new THREE.Vector2(verts[v][1][0] / texsize[0], verts[v][1][1] / texsize[1])
                     ]);
                 }
             }

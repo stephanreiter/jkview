@@ -1,5 +1,5 @@
 from flask import Flask, Response, render_template, request
-from flask_caching import Cache # pip3 install Flask-Caching
+from flask_caching import Cache  # pip3 install Flask-Caching
 
 import json
 import os
@@ -58,10 +58,16 @@ def level_data(level_id):
                         _atomically_dump(gob_file, gob_path)
                     break
 
-    surfaces, texture_data = loader.load_level_from_file(gob_path, censor=censor)
+    surfaces, model_surfaces, texture_data = loader.load_level_from_file(
+        gob_path, censor=censor)
 
-    result = 'texcount = {};\n'.format(len(texture_data))
+    texsizes = []
+    for tex in texture_data:
+        texsizes.append(tex[2])
+
+    result = 'texsizes = ' + json.dumps(texsizes) + ';\n'
     result += 'surfaces = ' + json.dumps(surfaces) + ';\n'
+    result += 'model_surfaces = ' + json.dumps(model_surfaces) + ';\n'
     result += 'textures = ' + json.dumps(texture_data) + ';\n'
     return Response(result, mimetype='application/javascript')
 

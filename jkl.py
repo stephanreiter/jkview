@@ -1,6 +1,5 @@
 import io
 import re
-import struct
 
 SUBSECTION_RE = re.compile(br'(.+)\s+\d+\Z')  # [ITEM TYPE] [COUNT]EOL
 ITEM_RE = re.compile(br'(\d+):')  # [IDX]: ...
@@ -21,10 +20,14 @@ SECTOR_SURFACES_RE = re.compile(br'SURFACES\s+(\d+)\s+(\d+)')
 #SECTOR_EXTRALIGHT_RE = re.compile(br'EXTRA\s+LIGHT\s+(-?\d*(\.\d+)?)')
 #SECTOR_TINT_RE = re.compile(br'TINT\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
 
+TEMPLATE_RE = re.compile(br'(\S+)\s+(\S+)\s+(\D.+)\Z')
+THING_RE = re.compile(
+    br'(\d+):\s+(\S+)\s+(\S+)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d+)\s*(.*)')
+
 
 def _get_surface_rest_re(nverts):
     text = br'\s+'
-    text += br'(-?\d+),(-?\d+)\s+' * nverts
+    text += br'(-?\d+),\s*(-?\d+)\s+' * nverts
     text += br'(-?\d*(\.\d+)?)\s+' * (nverts - 1)
     text += br'(-?\d*(\.\d+)?)'  # no trailing whitespace
     rest_re = re.compile(text)
@@ -51,6 +54,9 @@ class JklFile:
         self._read_georesource(sections[b'georesource'])
         self._read_sectors(sections[b'sectors'])
         self._prune_materials()
+
+        templates = self._read_templates(sections[b'templates'])
+        self._read_things(sections[b'things'], templates)
 
     def _prune_materials(self):
         used_materials = {}
@@ -122,8 +128,8 @@ class JklFile:
                     uv_idx = int(match.group(2 * i + 2))
                     intensity = float(match.group(2 * nverts + i * 2 + 1))
 
-                    uv = (0.0, 0.0) if uv_idx == - \
-                        1 else (uvs[uv_idx][0] * uv_scale, uvs[uv_idx][1] * uv_scale)
+                    uv = (0.0, 0.0) if uv_idx == -1 \
+                        else (uvs[uv_idx][0] * uv_scale, uvs[uv_idx][1] * uv_scale)
                     diffuse = min(intensity, 1.0) + extra_light
                     vertices.append([xyzs[xyz_idx], uv, diffuse])
 
@@ -183,6 +189,53 @@ class JklFile:
 
         self.sectors = sectors
 
+    def _read_config(self, text):
+        config = {}
+        for cfgpair in text.split():
+            k, v = cfgpair.split(b'=')
+            config[k] = v
+        return config
+
+    def _read_templates(self, lines):
+        tmpls = {}
+        for line in lines:
+            match = TEMPLATE_RE.match(line)
+            if match:
+                name = match.group(1).lower()
+                base_name = match.group(2).lower()
+                config = self._read_config(match.group(3))
+                if base_name in tmpls:
+                    # merge: overwrite values of base with new ones
+                    config = {**tmpls[base_name], **config}
+                tmpls[name] = config
+        return tmpls
+
+    def _read_things(self, lines, templates):
+        models = []
+        for line in lines:
+            match = THING_RE.match(line)
+            if match:
+                key = int(match.group(1))
+                template = match.group(2).lower()
+                name = match.group(3)
+                x = float(match.group(4))
+                y = float(match.group(6))
+                z = float(match.group(8))
+                pitch = float(match.group(10))
+                yaw = float(match.group(12))
+                roll = float(match.group(14))
+                sector = int(match.group(16))
+                config = self._read_config(
+                    match.group(17)) if match.group(17) else {}
+                # merge: overwrite values of template with new ones
+                config = {**templates[template], **config}
+
+                if b'model3d' in config:
+                    mdl = {'pos': (x, y, z), 'rot': (
+                        pitch, yaw, roll), 'sector': sector, 'model': config[b'model3d']}
+                    models.append(mdl)
+        self.models = models
+
 
 def _strip(line):
     start = line.find(b'#')
@@ -207,7 +260,7 @@ def _parse_section(lines, f, section):
         elif _ends_section(line):
             return line
         lines.append(line)
-    return None
+    return b''
 
 
 def read_from_file(f):

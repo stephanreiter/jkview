@@ -38,7 +38,7 @@ def _save_frames(frames):
                 fmt = "gif"
                 frames[0].save(output, format='GIF',
                                append_images=frames[1:], save_all=True, duration=1000)
-        return output.getvalue(), fmt, len(frames)
+        return output.getvalue(), fmt, len(frames), (frames[0].width, frames[0].height)
 
 
 def _read_colors(f, color_extraction, count, colormap):
