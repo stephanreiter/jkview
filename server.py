@@ -1,5 +1,6 @@
 from flask import Flask, Response, render_template, request
-from flask_caching import Cache  # pip3 install Flask-Caching
+from flask_caching import Cache
+from flask_compress import Compress
 
 import json
 import os
@@ -13,6 +14,7 @@ import loader
 
 app = Flask(__name__)
 cache = Cache(app, config={'CACHE_TYPE': 'simple'})
+Compress(app)
 
 DOWNLOAD_LINK_RE = re.compile(
     br'<meta http-equiv="Refresh" content="2; URL=(https://www.massassi.net/files/levels/.+.zip)">')
