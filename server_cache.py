@@ -1,11 +1,10 @@
 # baed on https://codereview.stackexchange.com/questions/147038/improving-the-flask-cache-decorator
 
-import binascii
 import cachetools
 import datetime
 import functools
+import hashlib
 import threading
-import os
 
 from flask import Response, make_response, request
 
@@ -71,7 +70,6 @@ def cached(cacheable=True, must_revalidate=True, client_only=True, client_timeou
             headers = {}
             cache_policy = cache_policy.strip(',')
             headers['Cache-Control'] = cache_policy
-            now = datetime.datetime.utcnow()
 
             client_etag = request.headers.get('If-None-Match')
 
@@ -83,8 +81,7 @@ def cached(cacheable=True, must_revalidate=True, client_only=True, client_timeou
                 cached_etag = response.headers.get('ETag')
                 if client_etag and cached_etag and client_etag == cached_etag:
                     headers['X-Cache'] = 'HIT from Client'
-                    headers['X-Last-Modified'] = response.headers.get(
-                        'X-LastModified')
+                    headers['X-Last-Modified'] = response.headers.get('X-LastModified')
                     response = make_response('', 304)
             else:
                 response = make_response(f(*args, **kwargs))
@@ -92,10 +89,8 @@ def cached(cacheable=True, must_revalidate=True, client_only=True, client_timeou
                     headers['X-Cache'] = 'MISS'
                     # - Added the headers to the response object instead of the
                     # headers dict so they get cached too
-                    # - If you can find any faster random algorithm go for it.
-                    response.headers.add(
-                        'ETag', binascii.hexlify(os.urandom(4)))
-                    response.headers.add('X-Last-Modified', str(now))
+                    response.headers.add('ETag', hashlib.md5(response.get_data()).hexdigest())
+                    response.headers.add('X-Last-Modified', str(datetime.datetime.utcnow()))
                     _cache.set(cache_key, response)
 
             response.headers.extend(headers)
