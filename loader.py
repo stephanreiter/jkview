@@ -143,6 +143,9 @@ def _load_level(jkl_name, gobs, censor=[]):
         models = {}
         model_surfaces = []
         for instance in level.models:
+            if instance['sector'] == -1:
+                continue # model is in no sector, TODO: use default colormap?
+
             filename = instance['model']
             if not filename in models:
                 full_filename = b'3do/' + filename
