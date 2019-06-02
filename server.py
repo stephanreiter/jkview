@@ -83,4 +83,4 @@ def level_viewer(level_id):
     return render_template('viewer.html', level_js=js_path)
 
 if __name__ == "__main__":
-    serve(app, host='0.0.0.0', port=8080)
+    serve(app, host='45.79.98.171', port=8080)
