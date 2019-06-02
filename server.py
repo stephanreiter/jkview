@@ -1,5 +1,4 @@
 from flask import Flask, Response, render_template, request
-from flask_caching import Cache
 from flask_compress import Compress
 
 import json
@@ -10,10 +9,10 @@ import tempfile
 import urllib.request
 import zipfile
 
+from server_cache import cached
 import loader
 
 app = Flask(__name__)
-cache = Cache(app, config={'CACHE_TYPE': 'simple'})
 Compress(app)
 
 DOWNLOAD_LINK_RE = re.compile(
@@ -36,7 +35,7 @@ def _atomically_dump(f, target_path):
 
 
 @app.route('/level/<level_id>.js')
-@cache.cached(timeout=50, query_string=True)
+@cached()
 def level_data(level_id):
     level_id = int(level_id)  # sanitize
     censor = request.args.get('ownsgame') != '1'
