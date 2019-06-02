@@ -12,6 +12,8 @@ import zipfile
 from server_cache import cached
 import loader
 
+from waitress import serve
+
 app = Flask(__name__)
 Compress(app)
 
@@ -79,3 +81,6 @@ def level_viewer(level_id):
     if request.args.get('ownsgame') == '1':
         js_path += '?ownsgame=1'
     return render_template('viewer.html', level_js=js_path)
+
+if __name__ == "__main__":
+    serve(app, host='0.0.0.0', port=8080)
