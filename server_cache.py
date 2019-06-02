@@ -10,7 +10,7 @@ from flask import Response, make_response, request
 
 
 class ThreadSafeLRUCache:
-    def __init__(self, maxcount=128):
+    def __init__(self, maxcount=32):
         self.cache = cachetools.LRUCache(maxcount)
         self.lock = threading.Lock()
 
@@ -34,7 +34,7 @@ class ThreadSafeLRUCache:
 _cache = ThreadSafeLRUCache()
 
 
-def cached(cacheable=True, must_revalidate=True, client_only=True, client_timeout=5 * 60, key='view/%s'):
+def cached(cacheable=True, must_revalidate=True, client_only=True, client_timeout=12 * 3600, key='view/%s'):
     """
 
     @see https://jakearchibald.com/2016/caching-best-practices/
