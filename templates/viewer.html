@@ -18,10 +18,9 @@
 <body>
     <div id="container"></div>
 
+    <script src="{{ level_js }}"></script>
     <script src="{{ url_for('static', filename='js/three.js') }}"></script>
     <script src="{{ url_for('static', filename='js/controls/OrbitControls.js') }}"></script>
-
-    <script src="{{ level_js }}"></script>
 
     <script>
         var container;
@@ -30,7 +29,43 @@
         init();
         animate();
 
+        function loadJSON(url, callback) {
+            var xobj = new XMLHttpRequest();
+            xobj.overrideMimeType("application/json");
+            xobj.open('GET', url, true);
+            xobj.onreadystatechange = function () {
+                if (xobj.readyState == 4 && xobj.status == "200") {
+                    callback(JSON.parse(xobj.responseText));
+                }
+            };
+            xobj.send(null);
+        }
+
         function init() {
+            var materialArray = [];
+            for (var i = 0; i < material_colors.length; ++i) {
+                var c = material_colors[i];
+                var color = new THREE.Color(c[0] / 255, c[1] / 255, c[2] / 255);
+                materialArray.push(new THREE.MeshBasicMaterial({ 'color': color }));
+            }
+
+            // Load the textures into our materials
+            loadJSON('{{ mat_js }}', function (matdata) {
+                var loader = new THREE.TextureLoader();
+                for (var i = 0; i < matdata.length; ++i) {
+                    if (matdata[i] != '') {
+                        var onLoaded = function (mats, idx) {
+                            return function (tex) {
+                                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                                mats[idx] = new THREE.MeshBasicMaterial({ 'map': tex });
+                                animate();
+                            };
+                        }(materialArray, i);
+                        loader.load(matdata[i], onLoaded);
+                    }
+                }
+            });
+
             container = document.getElementById('container');
 
             scene = new THREE.Scene();
@@ -38,19 +73,14 @@
 
             //scene.add(new THREE.AmbientLight(0xcccccc));
 
-            var materialArray = [];
-            for (var i = 0; i < texsizes.length; ++i) {
-                materialArray.push(new THREE.MeshBasicMaterial());
-            }
-
             var geometry = new THREE.Geometry();
             geometry.faceVertexUvs[0] = [];
             geometry.uvsNeedUpdate = true;
+
             for (var i = 0; i < surfaces.length; ++i) {
                 var verts = surfaces[i]['vertices'];
                 var normal = surfaces[i]['normal'];
-                var texture = surfaces[i]['texture'];
-                var texsize = texsizes[texture];
+                var material = surfaces[i]['material'];
 
                 var v0 = geometry.vertices.length;
                 for (var v = 0; v < verts.length; ++v) {
@@ -61,22 +91,22 @@
                 var n = new THREE.Vector3(normal[0], normal[1], normal[2]);
                 for (var v = 2; v < verts.length; ++v) {
                     var v2 = v0 + v;
+
                     var face = new THREE.Face3(v0, v2 - 1, v2, n);
-                    face.materialIndex = texture;
+                    face.materialIndex = material;
                     geometry.faces.push(face);
 
                     geometry.faceVertexUvs[0].push([
-                        new THREE.Vector2(verts[0][1][0] / texsize[0], verts[0][1][1] / texsize[1]),
-                        new THREE.Vector2(verts[v - 1][1][0] / texsize[0], verts[v - 1][1][1] / texsize[1]),
-                        new THREE.Vector2(verts[v][1][0] / texsize[0], verts[v][1][1] / texsize[1])
+                        new THREE.Vector2(verts[0][1][0], verts[0][1][1]),
+                        new THREE.Vector2(verts[v - 1][1][0], verts[v - 1][1][1]),
+                        new THREE.Vector2(verts[v][1][0], verts[v][1][1])
                     ]);
                 }
             }
 
             for (var i = 0; i < model_surfaces.length; ++i) {
                 var verts = model_surfaces[i]['vertices'];
-                var texture = model_surfaces[i]['texture'];
-                var texsize = texsizes[texture];
+                var material = model_surfaces[i]['material'];
 
                 var v0 = geometry.vertices.length;
                 for (var v = 0; v < verts.length; ++v) {
@@ -86,13 +116,15 @@
 
                 for (var v = 2; v < verts.length; ++v) {
                     var v2 = v0 + v;
+
                     var face = new THREE.Face3(v0, v2 - 1, v2);
-                    face.materialIndex = texture;
+                    face.materialIndex = material;
                     geometry.faces.push(face);
+
                     geometry.faceVertexUvs[0].push([
-                        new THREE.Vector2(verts[0][1][0] / texsize[0], verts[0][1][1] / texsize[1]),
-                        new THREE.Vector2(verts[v - 1][1][0] / texsize[0], verts[v - 1][1][1] / texsize[1]),
-                        new THREE.Vector2(verts[v][1][0] / texsize[0], verts[v][1][1] / texsize[1])
+                        new THREE.Vector2(verts[0][1][0], verts[0][1][1]),
+                        new THREE.Vector2(verts[v - 1][1][0], verts[v - 1][1][1]),
+                        new THREE.Vector2(verts[v][1][0], verts[v][1][1])
                     ]);
                 }
             }
@@ -125,19 +157,6 @@
 
             window.addEventListener('resize', onWindowResize, false);
             document.addEventListener('dblclick', onDblClick, false);
-
-            // Load the textures into our materials
-            var loader = new THREE.TextureLoader();
-            for (var i = 0; i < textures.length; ++i) {
-                var texture = loader.load(textures[i][0]);
-                texture.wrapS = THREE.RepeatWrapping;
-                texture.wrapT = THREE.RepeatWrapping;
-                materialArray[i].map = texture;
-            }
-
-            THREE.DefaultLoadingManager.onProgress = function (item, loaded, total) {
-                animate();
-            };
         }
 
         function onWindowResize() {
@@ -209,8 +228,7 @@
         }
 
         function animate() {
-            // don't loop: requestAnimationFrame(animate);
-            render();
+            requestAnimationFrame(render);
         }
 
         function render() {
