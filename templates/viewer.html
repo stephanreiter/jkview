@@ -22,17 +22,45 @@
             top: calc(50vh - 75px);
             text-align: center;
         }
+
+        .info {
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: center;
+            z-index: 2;
+            color: #cccccc;
+            visibility: hidden;
+        }
     </style>
 </head>
 
 <body>
     <div id="progress"></div>
+    <div id="mouseinfo" class="info">
+        Rotate: left drag. Pan: right drag. Zoom: wheel. Anchor: double-click.
+    </div>
+    <div id="touchinfo" class="info">
+        Rotate: drag. Pan: two-finger drag. Zoom: pinch.
+    </div>
 
     <script src="{{ url_for('static', filename='js/progressbar.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/three.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/controls/OrbitControls.js') }}"></script>
 
     <script>
+        function showInfo() {
+            var is_touch_device = (('ontouchstart' in window)
+                || (navigator.MaxTouchPoints > 0)
+                || (navigator.msMaxTouchPoints > 0));
+
+            var info = document.getElementById(is_touch_device ? 'touchinfo' : 'mouseinfo');
+            info.style.visibility = "visible";
+        }
+
         var progress = new ProgressBar.SemiCircle('#progress', {
             color: '#00ff7f',
         });
@@ -149,14 +177,14 @@
             }
 
             geometry.sortFacesByMaterialIndex(); // huge speedup!
-            geometry.computeBoundingSphere();
+            geometry.computeBoundingBox();
 
             // position camera and configure controls            
-            var bs = geometry.boundingSphere;
-            var pos = new THREE.Vector3(bs.center.x, bs.center.y, bs.center.z);
-            pos.sub(new THREE.Vector3(0, bs.radius, -bs.radius));
-            camera.position.copy(pos);
-            controls.target.copy(bs.center);
+            var bb = geometry.boundingBox;
+            var center = new THREE.Vector3();
+            bb.getCenter(center);
+            camera.position.copy(bb.max);
+            controls.target.copy(center);
             controls.update();
 
             // create a mesh using the geometry
@@ -227,6 +255,7 @@
             scene.add(camera);
 
             controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableKeys = false;
             controls.rotateSpeed = 0.25;
             controls.zoomSpeed = 0.25;
 
@@ -310,8 +339,9 @@
 
         function render() {
             if (progressDone) {
-                hideProgress();
                 progressDone = false;
+                hideProgress();
+                showInfo();
             }
             renderer.render(scene, camera);
         }
