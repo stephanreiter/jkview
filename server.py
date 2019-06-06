@@ -15,6 +15,9 @@ import loader
 app = Flask(__name__)
 Compress(app)
 
+CENSOR_ALWAYS = True  # enable to avoid extraction of full-resolution assets on server
+VERSION = 1  # increment to invalidate client caches
+
 DOWNLOAD_LINK_RE = re.compile(
     br'<meta http-equiv="Refresh" content="2; URL=(https://www.massassi.net/files/levels/.+.zip)">')
 
@@ -54,14 +57,12 @@ def _encode_image(data, mime):
     return 'data:' + mime + ';base64,' + base64.b64encode(data).decode()
 
 
-@app.route('/level/<level_id>/map.js')
-def level_map_data(level_id):
-    level_id = int(level_id)  # sanitize
+def _encode_color(tuple):
+    return '#%02x%02x%02x' % (tuple[0], tuple[1], tuple[2])
 
-    mapjs_filename = 'map.js'
-    mapjs_path = _get_cache_filename(level_id, mapjs_filename)
-    if os.path.exists(mapjs_path):
-        return send_file(mapjs_path)
+
+def _extract_level(level_id):
+    level_id = int(level_id)  # sanitize
 
     gob_path = os.path.join('downloads', '{}.gob'.format(level_id))
     if not os.path.isfile(gob_path):
@@ -95,46 +96,53 @@ def level_map_data(level_id):
                     v[1] = (v[1][0] * sclu, v[1][1] * sclv)
 
     # write censored and uncensored material data to mat.js
-    for censor in [True, False]:
+    censor_states = [True] if CENSOR_ALWAYS else [True, False]
+    for censor in censor_states:
         material_data = []
         for m in materials:
             censored = censor and 'lowres' in m
             material_imgkey = 'lowres' if censored else 'image'
-            data = _encode_image(m[material_imgkey], m['mime']) if (material_imgkey in m) else ''
+            data = _encode_image(m[material_imgkey], m['mime']) if (
+                material_imgkey in m) else ''
             material_data.append(data)
 
         matjs_filename = 'mat{0}.json'.format('' if censor else '-full')
-        _write_cache_atomically(level_id, matjs_filename, 'wt', json.dumps(material_data))
+        _write_cache_atomically(level_id, matjs_filename,
+                                'wt', json.dumps(material_data))
 
-    # get material colors
-    material_colors = [m['color'] for m in materials]
+    # assemble map data
+    material_colors = [_encode_color(m['color']) for m in materials]
+    map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces,
+                'material_colors': material_colors}
+    _write_cache_atomically(level_id, 'map.json',
+                            'wt', json.dumps(map_data))
 
-    result = 'surfaces = ' + json.dumps(surfaces) + ';\n'
-    result += 'model_surfaces = ' + json.dumps(model_surfaces) + ';\n'
-    result += 'material_colors = ' + json.dumps(material_colors) + ';\n'
-    _write_cache_atomically(level_id, mapjs_filename, 'wt', result)
 
-    # now we can send the file!
-    return send_file(mapjs_path)
+@app.route('/level/<int:level_id>/map.json')
+def level_map_data(level_id):
+    mapjs_path = _get_cache_filename(level_id, 'map.json')
+    if not os.path.exists(mapjs_path):
+        _extract_level(level_id)
+    return send_from_directory('cache', '{0}-{1}'.format(level_id, 'map.json'))
 
 
 @app.route('/level/<int:level_id>/mat.json')
 def level_material_data(level_id):
-    censor = request.args.get('ownsgame') != '1'
+    censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
     matjs_filename = 'mat{0}.json'.format('' if censor else '-full')
     return send_from_directory('cache', '{0}-{1}'.format(level_id, matjs_filename))
 
 
 @app.route('/level/<int:level_id>/index.html')
 def level_viewer(level_id):
-    censor = request.args.get('ownsgame') != '1'
+    censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
 
-    leveljs_path = 'map.js'
+    mapjs_url = 'map.json?version={0}'.format(VERSION)
     if not censor:
-        leveljs_path += '?ownsgame=1'
+        mapjs_url += '&ownsgame=1'
 
-    matjs_path = 'mat.json'
+    matjs_url = 'mat.json?version={0}'.format(VERSION)
     if not censor:
-        matjs_path += '?ownsgame=1'
+        matjs_url += '&ownsgame=1'
 
-    return render_template('viewer.html', level_js=leveljs_path, mat_js=matjs_path)
+    return render_template('viewer.html', map_js=mapjs_url, mat_js=matjs_url)
