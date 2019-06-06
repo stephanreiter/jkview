@@ -53,7 +53,6 @@
         }
 
         var camera, controls, scene, renderer, mesh, materialArray;
-        var materialData;
 
         var progressDone = false;
         progress.setText("Loading ...");
@@ -63,12 +62,11 @@
         progress.animate(mapLoadProgress(0));
         loadJSON('{{ map_js|safe }}', function (mapdata) {
             loadMap(mapdata);
+            // no progress for textures, we'll start using them when available
+            loadJSON('{{ mat_js|safe }}', function (matdata) {
+                loadMaterials(matdata);
+            });
         }, onMapLoadProgress);
-
-        // no progress for textures, we'll start using them when available
-        loadJSON('{{ mat_js|safe }}', function (matdata) {
-            loadMaterials(matdata);
-        });
 
         function loadMap(mapdata) {
             if (typeof mapdata == 'undefined') {
@@ -171,23 +169,11 @@
             // enable user interaction now
             controls.addEventListener('change', animate);
             document.addEventListener('dblclick', onDblClick, false);
-
-            // has material data arrived in the mean time?
-            if (typeof materialData !== 'undefined') {
-                loadMaterials(materialData);
-                materialData = undefined;
-            }
         }
 
         function loadMaterials(matdata) {
             if (typeof matdata == 'undefined') {
                 console.error("Failed to retrieve materials!");
-                return;
-            }
-
-            // do we need to wait for map data?
-            if (typeof materialArray == 'undefined') {
-                materialData = matdata;
                 return;
             }
 
