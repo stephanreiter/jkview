@@ -77,8 +77,9 @@ def _extract_level(level_id):
 
         with zipfile.ZipFile(zip_path) as level_zip:
             # locate the first gob file and write its contents atomically to gob_path
+            # note: MotS used goo as the extension: we'll also take that if found!
             for info in level_zip.infolist():
-                if info.filename.endswith('.gob'):
+                if info.filename.endswith('.gob') or info.filename.endswith('.goo'):
                     with level_zip.open(info) as gob_file:
                         _atomically_dump(gob_file, gob_path)
                     break
@@ -89,7 +90,7 @@ def _extract_level(level_id):
     for src in [surfaces, model_surfaces]:
         for surf in src:
             mat = materials[surf['material']]
-            if 'dims' in mat:
+            if mat and 'dims' in mat:
                 sclu = 1.0 / mat['dims'][0]
                 sclv = 1.0 / mat['dims'][1]
                 for v in surf['vertices']:
@@ -99,11 +100,14 @@ def _extract_level(level_id):
     censor_states = [True] if CENSOR_ALWAYS else [True, False]
     for censor in censor_states:
         material_data = []
-        for m in materials:
-            censored = censor and 'lowres' in m
-            material_imgkey = 'lowres' if censored else 'image'
-            data = _encode_image(m[material_imgkey], m['mime']) if (
-                material_imgkey in m) else ''
+        for mat in materials:
+            if mat:
+                censored = censor and 'lowres' in mat
+                material_imgkey = 'lowres' if censored else 'image'
+                data = _encode_image(mat[material_imgkey], mat['mime']) if (
+                    material_imgkey in mat) else ''
+            else:
+                data = ''
             material_data.append(data)
 
         matjs_filename = 'mat{0}.json'.format('' if censor else '-full')
@@ -111,7 +115,7 @@ def _extract_level(level_id):
                                 'wt', json.dumps(material_data))
 
     # assemble map data
-    material_colors = [_encode_color(m['color']) for m in materials]
+    material_colors = [_encode_color(mat['color']) if mat else '#000000' for mat in materials]
     map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces,
                 'material_colors': material_colors}
     _write_cache_atomically(level_id, 'map.json',

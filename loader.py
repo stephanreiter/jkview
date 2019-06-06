@@ -150,8 +150,12 @@ def _load_level(jkl_name, gobs, official=[]):
         for k, sector in level.sectors.items():
             colormap_name = level.colormaps[sector['colormap']]
             if not colormap_name in colormaps:
-                colormaps[colormap_name] = cmp.read_from_bytes(
-                    vfs.read(b'misc/cmp/' + colormap_name))
+                try:
+                    cm = cmp.read_from_bytes(
+                        vfs.read(b'misc/cmp/' + colormap_name))
+                except:
+                    cm = None # colormap not found
+                colormaps[colormap_name] = cm
             texcache.set_current_colormap(
                 colormap_name, colormaps[colormap_name])
 
@@ -189,8 +193,11 @@ def _load_level(jkl_name, gobs, official=[]):
             filename = instance['model']
             if not filename in models:
                 full_filename = b'3do/' + filename
-                models[filename] = threedo.read_from_bytes(
-                    vfs.read(full_filename))
+                try:
+                    models[filename] = threedo.read_from_bytes(
+                        vfs.read(full_filename))
+                except:
+                    continue # model not found
 
             colormap = sector_colormaps[instance['sector']]
             colormap_name = sector_colormap_names[instance['sector']]
