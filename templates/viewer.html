@@ -34,6 +34,9 @@
             z-index: 2;
             color: #cccccc;
             visibility: hidden;
+            opacity: 1;
+            transition: 1s opacity;
+            cursor: default;
         }
 
         #mapinfo {
@@ -54,8 +57,13 @@
         }
 
         #mapinfo ul {
-            margin-top: 0;
             list-style: none;
+            margin: 0;
+        }
+
+        #mapinfo p {
+            cursor: default;
+            margin: 0;
         }
     </style>
 </head>
@@ -71,7 +79,7 @@
         Rotate: drag. Move: two-finger drag. Zoom: pinch.
     </div>
     <div id="mapinfo">
-        Maps:
+        <p>Maps:</p>
         <ul id="mapinfolist"></ul>
     </div>
 
@@ -92,9 +100,9 @@
                 a.appendChild(linkText);
                 a.title = "Switch to map " + name;
                 if (i == 0)
-                    a.href = "{{link_adjust}}index.html{{ ownsgame|safe }}";
+                    a.href = "{{link_adjust}}{{ ownsgame|safe }}";
                 else
-                    a.href = "{{link_adjust}}" + i + "/index.html{{ ownsgame|safe }}";
+                    a.href = "{{link_adjust}}" + i + "/{{ ownsgame|safe }}";
 
                 var li = document.createElement("li");
                 li.appendChild(a);
@@ -108,8 +116,16 @@
                 || (navigator.MaxTouchPoints > 0)
                 || (navigator.msMaxTouchPoints > 0));
 
+            // show platform-specific info about controls
+            // and fade the info out after 5 seconds
             var info = document.getElementById(isTouchDevice ? 'touchinfo' : 'mouseinfo');
             info.style.visibility = "visible";
+            info.addEventListener('click', function() {
+                info.style.opacity = '0';
+            }, false);
+            window.setTimeout(function () {
+                info.style.opacity = '0';
+            }, 5000);
 
             if (maps.length > 1) {
                 var mapinfo = document.getElementById('mapinfo');
