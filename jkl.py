@@ -192,6 +192,8 @@ class JklFile:
     def _read_config(self, text):
         config = {}
         for cfgpair in text.split():
+            if cfgpair == b'-1':
+                continue #MotS
             k, v = cfgpair.split(b'=')
             config[k] = v
         return config

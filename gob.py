@@ -49,6 +49,15 @@ def open_gob_file(filename):
             name = name.replace(b'\\', b'/')  # use forward slashes
             toc[name] = (offset, length)
 
+            # WORK AROUND FOR SOME MAPS
+            # the JK engine doesn't support spaces in filenames
+            # if encountered, anything from the space on is ignored
+            # so give this file a second name; this fixes loading of massassi map #753
+            if b' ' in name:
+                name = name.split(b' ')[0]
+                if not name in toc:
+                    toc[name] = (offset, length)
+
         return GobFile(filename, toc)
 
 
@@ -57,9 +66,9 @@ class MultiGob:
         self.gobs = gobs
         self.filenames = filenames
         toc = {}
-        for i in range(len(gobs)):
-            for k in gobs[i].ls():
-                toc[k] = (gobs[i], filenames[i])
+        for i, gob in enumerate(gobs):
+            for j in gob.ls():
+                toc[j] = (gob, filenames[i])
         self.toc = toc
 
     def __enter__(self):

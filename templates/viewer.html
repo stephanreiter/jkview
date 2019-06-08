@@ -2,55 +2,187 @@
 <html lang="en">
 
 <head>
-    <title>Dark Forces 2: Jedi Knight level preview powered by The Massassi Temple</title>
+    <title>{{ title }} preview powered by The Massassi Temple</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
         body {
-            font-family: Monospace;
+            font-family: sans-serif;
             background-color: #444444;
             margin: 0px;
             overflow: hidden;
+        }
+
+        #progress {
+            position: absolute;
+            z-index: 1;
+            width: 300px;
+            height: 150px;
+            left: calc(50vw - 150px);
+            top: calc(50vh - 75px);
+            text-align: center;
+        }
+
+        .info {
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: center;
+            z-index: 2;
+            color: #cccccc;
+            visibility: hidden;
+        }
+
+        #mapinfo {
+            position: absolute;
+            top: 0px;
+            right: 0px;
+            width: 25%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: right;
+            z-index: 3;
+            color: #cccccc;
+            visibility: hidden;
+        }
+
+        #mapinfo a {
+            color: #cccccc;
+        }
+
+        #mapinfo ul {
+            margin-top: 0;
+            list-style: none;
         }
     </style>
 </head>
 
 <body>
-    <div id="container"></div>
+    <div id="progress"></div>
+    <div id="mouseinfo" class="info">
+        <b>{{title}}</b><br>
+        Rotate: left drag. Move: right drag. Zoom: wheel. Re-anchor: double-click.
+    </div>
+    <div id="touchinfo" class="info">
+        <b>{{title}}</b><br>
+        Rotate: drag. Move: two-finger drag. Zoom: pinch.
+    </div>
+    <div id="mapinfo">
+        Maps:
+        <ul id="mapinfolist"></ul>
+    </div>
 
-    <script src="{{ url_for('static', filename='js/three.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/progressbar.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/three.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/controls/OrbitControls.js') }}"></script>
 
-    <script src="{{ level_js }}"></script>
-
     <script>
-        var container;
-        var camera, controls, scene, renderer, mesh;
+        var maps = JSON.parse({{ maps| tojson | safe }});
+        if (maps.length > 1) {
+            var mapinfoList = document.getElementById('mapinfolist');
+            for (var i = 0; i < maps.length; ++i) {
+                var name = maps[i];
 
+                var linkText = document.createTextNode(name);
+
+                var a = document.createElement('a');
+                a.appendChild(linkText);
+                a.title = "Switch to map " + name;
+                if (i == 0)
+                    a.href = "{{link_adjust}}index.html{{ ownsgame|safe }}";
+                else
+                    a.href = "{{link_adjust}}" + i + "/index.html{{ ownsgame|safe }}";
+
+                var li = document.createElement("li");
+                li.appendChild(a);
+
+                mapinfoList.appendChild(li);
+            }
+        }
+
+        function showInfo() {
+            var isTouchDevice = (('ontouchstart' in window)
+                || (navigator.MaxTouchPoints > 0)
+                || (navigator.msMaxTouchPoints > 0));
+
+            var info = document.getElementById(isTouchDevice ? 'touchinfo' : 'mouseinfo');
+            info.style.visibility = "visible";
+
+            if (maps.length > 1) {
+                var mapinfo = document.getElementById('mapinfo');
+                mapinfo.style.visibility = "visible";
+            }
+        }
+
+        var progress = new ProgressBar.SemiCircle('#progress', {
+            color: '#00ff7f',
+        });
+
+        function hideProgress() {
+            var progressContainer = document.getElementById('progress');
+            progressContainer.parentNode.removeChild(progressContainer);
+        }
+
+        function mapLoadProgress(frac) {
+            return 0.3 + frac * 0.7;
+        }
+
+        function onMapLoadProgress(ev) {
+            if (ev.lengthComputable) {
+                progress.animate(mapLoadProgress(ev.loaded / ev.total));
+            }
+        }
+
+        var camera, controls, scene, renderer, mesh, materialArray;
+
+        var progressDone = false;
+        progress.setText("Loading ...");
+        progress.animate(0);
         init();
-        animate();
 
-        function init() {
-            container = document.getElementById('container');
+        progress.animate(mapLoadProgress(0));
+        loadJSON('{{ map_js|safe }}', function (mapdata) {
+            loadMap(mapdata);
+            // no progress for textures, we'll start using them when available
+            loadJSON('{{ mat_js|safe }}', function (matdata) {
+                loadMaterials(matdata);
+            });
+        }, onMapLoadProgress);
 
-            scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x444444);
+        function loadMap(mapdata) {
+            if (typeof mapdata == 'undefined') {
+                progress.setText("Loading failed.");
+                progress.animate(1);
+                console.error("Failed to retrieve map!");
+                return;
+            }
 
-            //scene.add(new THREE.AmbientLight(0xcccccc));
+            progress.animate(1, function () {
+                progress.setText("Done!");
+                window.setTimeout(function () {
+                    progressDone = true;
+                    animate(); // rerender
+                }, 1000);
+            });
 
-            var materialArray = [];
-            for (var i = 0; i < texsizes.length; ++i) {
-                materialArray.push(new THREE.MeshBasicMaterial());
+            materialArray = [];
+            var materialColors = mapdata['material_colors'];
+            for (var i = 0; i < materialColors.length; ++i) {
+                materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[i] }));
             }
 
             var geometry = new THREE.Geometry();
             geometry.faceVertexUvs[0] = [];
             geometry.uvsNeedUpdate = true;
+
+            var surfaces = mapdata['surfaces'];
             for (var i = 0; i < surfaces.length; ++i) {
                 var verts = surfaces[i]['vertices'];
                 var normal = surfaces[i]['normal'];
-                var texture = surfaces[i]['texture'];
-                var texsize = texsizes[texture];
+                var material = surfaces[i]['material'];
 
                 var v0 = geometry.vertices.length;
                 for (var v = 0; v < verts.length; ++v) {
@@ -61,22 +193,23 @@
                 var n = new THREE.Vector3(normal[0], normal[1], normal[2]);
                 for (var v = 2; v < verts.length; ++v) {
                     var v2 = v0 + v;
+
                     var face = new THREE.Face3(v0, v2 - 1, v2, n);
-                    face.materialIndex = texture;
+                    face.materialIndex = material;
                     geometry.faces.push(face);
 
                     geometry.faceVertexUvs[0].push([
-                        new THREE.Vector2(verts[0][1][0] / texsize[0], verts[0][1][1] / texsize[1]),
-                        new THREE.Vector2(verts[v - 1][1][0] / texsize[0], verts[v - 1][1][1] / texsize[1]),
-                        new THREE.Vector2(verts[v][1][0] / texsize[0], verts[v][1][1] / texsize[1])
+                        new THREE.Vector2(verts[0][1][0], verts[0][1][1]),
+                        new THREE.Vector2(verts[v - 1][1][0], verts[v - 1][1][1]),
+                        new THREE.Vector2(verts[v][1][0], verts[v][1][1])
                     ]);
                 }
             }
 
-            for (var i = 0; i < model_surfaces.length; ++i) {
-                var verts = model_surfaces[i]['vertices'];
-                var texture = model_surfaces[i]['texture'];
-                var texsize = texsizes[texture];
+            var modelSurfaces = mapdata['model_surfaces'];
+            for (var i = 0; i < modelSurfaces.length; ++i) {
+                var verts = modelSurfaces[i]['vertices'];
+                var material = modelSurfaces[i]['material'];
 
                 var v0 = geometry.vertices.length;
                 for (var v = 0; v < verts.length; ++v) {
@@ -86,58 +219,106 @@
 
                 for (var v = 2; v < verts.length; ++v) {
                     var v2 = v0 + v;
+
                     var face = new THREE.Face3(v0, v2 - 1, v2);
-                    face.materialIndex = texture;
+                    face.materialIndex = material;
                     geometry.faces.push(face);
+
                     geometry.faceVertexUvs[0].push([
-                        new THREE.Vector2(verts[0][1][0] / texsize[0], verts[0][1][1] / texsize[1]),
-                        new THREE.Vector2(verts[v - 1][1][0] / texsize[0], verts[v - 1][1][1] / texsize[1]),
-                        new THREE.Vector2(verts[v][1][0] / texsize[0], verts[v][1][1] / texsize[1])
+                        new THREE.Vector2(verts[0][1][0], verts[0][1][1]),
+                        new THREE.Vector2(verts[v - 1][1][0], verts[v - 1][1][1]),
+                        new THREE.Vector2(verts[v][1][0], verts[v][1][1])
                     ]);
                 }
             }
 
-            geometry.computeBoundingSphere();
             geometry.sortFacesByMaterialIndex(); // huge speedup!
+            geometry.computeBoundingBox();
+
+            // position camera and configure controls            
+            var bb = geometry.boundingBox;
+            var center = new THREE.Vector3();
+            bb.getCenter(center);
+            camera.position.copy(bb.max);
+            controls.target.copy(center);
+            controls.update();
 
             // create a mesh using the geometry
             mesh = new THREE.Mesh(geometry, materialArray);
             scene.add(mesh);
 
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
-            camera.up.set(0, 0, 1);
-            camera.position.copy(geometry.boundingSphere.center);
-            camera.position.sub(new THREE.Vector3(0, geometry.boundingSphere.radius, -geometry.boundingSphere.radius));
-            scene.add(camera);
+            // render the first frame with the mesh
+            animate();
+
+            // enable user interaction now
+            controls.addEventListener('change', animate);
+            document.addEventListener('dblclick', onDblClick, false);
+        }
+
+        function loadMaterials(matdata) {
+            if (typeof matdata == 'undefined') {
+                console.error("Failed to retrieve materials!");
+                return;
+            }
+
+            var loader = new THREE.TextureLoader();
+            for (var i = 0; i < matdata.length; ++i) {
+                if (matdata[i] != '') {
+                    var onLoaded = function (mats, idx) {
+                        return function (tex) {
+                            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                            mats[idx] = new THREE.MeshBasicMaterial({ 'map': tex });
+                            animate();
+                        };
+                    }(materialArray, i);
+                    loader.load(matdata[i], onLoaded);
+                }
+            }
+        }
+
+        function loadJSON(url, callback, progressCallback) {
+            var xobj = new XMLHttpRequest();
+            xobj.overrideMimeType("application/json");
+            xobj.open('GET', url, true);
+            xobj.onprogress = progressCallback;
+            xobj.onreadystatechange = function () {
+                if (xobj.readyState == 4) {
+                    if (xobj.status == 200) {
+                        callback(JSON.parse(xobj.responseText));
+                    }
+                    else {
+                        callback(undefined); // error case
+                    }
+                }
+            };
+            xobj.send();
+            return xobj;
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x444444);
+
+            //scene.add(new THREE.AmbientLight(0xcccccc));
 
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
-            container.appendChild(renderer.domElement);
+            document.body.appendChild(renderer.domElement);
 
-            // Controls
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+            camera.up.set(0, 0, 1);
+            scene.add(camera);
+
             controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableKeys = false;
             controls.rotateSpeed = 0.25;
             controls.zoomSpeed = 0.25;
-            controls.target.copy(geometry.boundingSphere.center); // center of the scene
-            controls.update();
-            controls.addEventListener('change', animate);
 
             window.addEventListener('resize', onWindowResize, false);
-            document.addEventListener('dblclick', onDblClick, false);
 
-            // Load the textures into our materials
-            var loader = new THREE.TextureLoader();
-            for (var i = 0; i < textures.length; ++i) {
-                var texture = loader.load(textures[i][0]);
-                texture.wrapS = THREE.RepeatWrapping;
-                texture.wrapT = THREE.RepeatWrapping;
-                materialArray[i].map = texture;
-            }
-
-            THREE.DefaultLoadingManager.onProgress = function (item, loaded, total) {
-                animate();
-            };
+            // render the first frame
+            animate();
         }
 
         function onWindowResize() {
@@ -150,6 +331,7 @@
         }
 
         var nextTarget = null;
+        var scheduled = 0;
         function doUpdateTarget() {
             const maxDist = 5;
 
@@ -161,8 +343,8 @@
 
             var delta = new THREE.Vector3;
             delta.subVectors(nextTarget, controls.target);
-            if (delta.length() > 0.1) {
-                delta.setLength(0.1);
+            if (delta.length() > 0.2) {
+                delta.setLength(0.2);
             }
             else {
                 doneTarget = true;
@@ -185,8 +367,16 @@
                 nextTarget = null;
             }
             else {
-                window.setTimeout(doUpdateTarget, 10);
+                if (scheduled == 0) {
+                    ++scheduled;
+                    window.setTimeout(scheduledMoveToTarget, 10);
+                }
             }
+        }
+
+        function scheduledMoveToTarget() {
+            --scheduled;
+            doUpdateTarget();
         }
 
         function updateTarget(pos) {
@@ -209,11 +399,15 @@
         }
 
         function animate() {
-            // don't loop: requestAnimationFrame(animate);
-            render();
+            requestAnimationFrame(render);
         }
 
         function render() {
+            if (progressDone) {
+                progressDone = false;
+                hideProgress();
+                showInfo();
+            }
             renderer.render(scene, camera);
         }
     </script>

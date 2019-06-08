@@ -2,13 +2,14 @@ import io
 import itertools
 import struct
 
-from PIL import Image, ImageOps, ImageFilter
+from PIL import Image, ImageOps
 
 
 def _decode_16bit(data, color_extraction):
     sr, sg, sb = [x for x in color_extraction['channel_shifts']]
     mr, mg, mb = [(1 << bits) - 1 for bits in color_extraction['channel_bits']]
     er, eg, eb = [x for x in color_extraction['channel_expands']]
+
     colors = []
     for i in range(0, len(data), 2):
         val = data[i] | (data[i + 1] << 8)
@@ -18,27 +19,6 @@ def _decode_16bit(data, color_extraction):
         a = 255
         colors.append((r, g, b, a))
     return colors
-
-
-def _save_frames(frames):
-    with io.BytesIO() as output:
-        if len(frames) == 1:
-            fmt = "png"
-            frames[0].save(output, format='PNG')
-        else:
-            if False:
-                # compose them side by side horizontally
-                fmt = "png"
-                composed = Image.new(
-                    'RGBA', (frames[0].width * len(frames), frames[0].height))
-                for i in range(len(frames)):
-                    composed.paste(frames[i], (frames[0].width * i, 0))
-                composed.save(output, format='PNG')
-            else:
-                fmt = "gif"
-                frames[0].save(output, format='GIF',
-                               append_images=frames[1:], save_all=True, duration=1000)
-        return output.getvalue(), fmt, len(frames), (frames[0].width, frames[0].height)
 
 
 def _read_colors(f, color_extraction, count, colormap):
@@ -59,14 +39,14 @@ def _read_colors(f, color_extraction, count, colormap):
         img = Image.frombytes('RGBA', (1, 1), x)
         frames.append(img)
 
-    return _save_frames(frames)
+    return frames
 
 
 def _set_alpha(rgba, lhs, rhs):
     return (rgba[0], rgba[1], rgba[2], 0) if lhs == rhs else rgba
 
 
-def _read_textures(f, color_extraction, count, colormap, censor):
+def _read_textures(f, color_extraction, count, colormap):
     # load the headers
     for i in range(count):
         mat_type, transparent_color, res1, res2, res3, res4, res5, res6, res7, idx = struct.unpack(
@@ -117,17 +97,12 @@ def _read_textures(f, color_extraction, count, colormap, censor):
         x = bytes(itertools.chain.from_iterable(pixel_bytes))
         img = Image.frombytes('RGBA', (org_width, org_height), x)
         img = ImageOps.flip(img)
-
-        # if we are asked to censor content, then blur the image
-        if censor:
-            img = img.filter(ImageFilter.GaussianBlur(16))
-
         frames.append(img)
 
-    return _save_frames(frames)
+    return frames
 
 
-def make_texture_from_file(f, colormap=None, censor=False):
+def load_frames_from_file(f, colormap=None):
     ident, version, mat_type, count, res1, res2 = struct.unpack(
         'Iiiiii', f.read(24))
     if ident != 542392653 or version != 50:
@@ -145,10 +120,10 @@ def make_texture_from_file(f, colormap=None, censor=False):
     if mat_type == 0:
         return _read_colors(f, color_extraction, count, colormap)
     elif mat_type == 2:
-        return _read_textures(f, color_extraction, count, colormap, censor)
+        return _read_textures(f, color_extraction, count, colormap)
     else:
         raise Exception("Invalid file!")
 
 
-def make_texture_from_bytes(b, colormap=None, censor=False):
-    return make_texture_from_file(io.BytesIO(b), colormap=colormap, censor=censor)
+def load_frames_from_bytes(b, colormap=None):
+    return load_frames_from_file(io.BytesIO(b), colormap=colormap)
