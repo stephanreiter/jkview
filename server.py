@@ -18,7 +18,7 @@ app = Flask(__name__)
 Compress(app)
 
 CENSOR_ALWAYS = False  # enable to avoid extraction of full-resolution assets on server
-VERSION = 1  # increment to invalidate client caches
+VERSION = 2  # increment to invalidate client caches
 
 DOWNLOAD_LINK_RE = re.compile(
     br'<meta http-equiv="Refresh" content="2; URL=(https://www.massassi.net/files/levels/.+.zip)">')
