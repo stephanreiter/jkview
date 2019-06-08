@@ -194,7 +194,7 @@ def level_material_data(level_id, episode_id):
     return _serve_material_data(level_id, episode_id)
 
 
-@app.route('/level/<int:level_id>/<int:episode_id>/index.html')
+@app.route('/level/<int:level_id>/<int:episode_id>/')
 def level_viewer(level_id, episode_id):
     return _serve_map(level_id, True)
 
@@ -209,6 +209,6 @@ def root_level_material_data(level_id):
     return _serve_material_data(level_id, 0)
 
 
-@app.route('/level/<int:level_id>/index.html')
+@app.route('/level/<int:level_id>/')
 def root_level_viewer(level_id):
     return _serve_map(level_id, False)
