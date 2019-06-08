@@ -17,7 +17,7 @@ import loader
 app = Flask(__name__)
 Compress(app)
 
-CENSOR_ALWAYS = True  # enable to avoid extraction of full-resolution assets on server
+CENSOR_ALWAYS = False  # enable to avoid extraction of full-resolution assets on server
 VERSION = 1  # increment to invalidate client caches
 
 DOWNLOAD_LINK_RE = re.compile(
