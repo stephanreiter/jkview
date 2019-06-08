@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>Dark Forces 2: Jedi Knight level preview powered by The Massassi Temple</title>
+    <title>{{ title }} preview powered by The Massassi Temple</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
@@ -35,16 +35,44 @@
             color: #cccccc;
             visibility: hidden;
         }
+
+        #mapinfo {
+            position: absolute;
+            top: 0px;
+            right: 0px;
+            width: 25%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: right;
+            z-index: 3;
+            color: #cccccc;
+            visibility: hidden;
+        }
+
+        #mapinfo a {
+            color: #cccccc;
+        }
+
+        #mapinfo ul {
+            margin-top: 0;
+            list-style: none;
+        }
     </style>
 </head>
 
 <body>
     <div id="progress"></div>
     <div id="mouseinfo" class="info">
+        <b>{{title}}</b><br>
         Rotate: left drag. Move: right drag. Zoom: wheel. Re-anchor: double-click.
     </div>
     <div id="touchinfo" class="info">
+        <b>{{title}}</b><br>
         Rotate: drag. Move: two-finger drag. Zoom: pinch.
+    </div>
+    <div id="mapinfo">
+        Maps:
+        <ul id="mapinfolist"></ul>
     </div>
 
     <script src="{{ url_for('static', filename='js/progressbar.min.js') }}"></script>
@@ -52,13 +80,41 @@
     <script src="{{ url_for('static', filename='js/controls/OrbitControls.js') }}"></script>
 
     <script>
+        var maps = JSON.parse({{ maps| tojson | safe }});
+        if (maps.length > 1) {
+            var mapinfoList = document.getElementById('mapinfolist');
+            for (var i = 0; i < maps.length; ++i) {
+                var name = maps[i];
+
+                var linkText = document.createTextNode(name);
+
+                var a = document.createElement('a');
+                a.appendChild(linkText);
+                a.title = "Switch to map " + name;
+                if (i == 0)
+                    a.href = "{{link_adjust}}index.html{{ ownsgame|safe }}";
+                else
+                    a.href = "{{link_adjust}}" + i + "/index.html{{ ownsgame|safe }}";
+
+                var li = document.createElement("li");
+                li.appendChild(a);
+
+                mapinfoList.appendChild(li);
+            }
+        }
+
         function showInfo() {
-            var is_touch_device = (('ontouchstart' in window)
+            var isTouchDevice = (('ontouchstart' in window)
                 || (navigator.MaxTouchPoints > 0)
                 || (navigator.msMaxTouchPoints > 0));
 
-            var info = document.getElementById(is_touch_device ? 'touchinfo' : 'mouseinfo');
+            var info = document.getElementById(isTouchDevice ? 'touchinfo' : 'mouseinfo');
             info.style.visibility = "visible";
+
+            if (maps.length > 1) {
+                var mapinfo = document.getElementById('mapinfo');
+                mapinfo.style.visibility = "visible";
+            }
         }
 
         var progress = new ProgressBar.SemiCircle('#progress', {
@@ -113,9 +169,9 @@
             });
 
             materialArray = [];
-            var material_colors = mapdata['material_colors'];
-            for (var i = 0; i < material_colors.length; ++i) {
-                materialArray.push(new THREE.MeshBasicMaterial({ 'color': material_colors[i] }));
+            var materialColors = mapdata['material_colors'];
+            for (var i = 0; i < materialColors.length; ++i) {
+                materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[i] }));
             }
 
             var geometry = new THREE.Geometry();
@@ -150,10 +206,10 @@
                 }
             }
 
-            var model_surfaces = mapdata['model_surfaces'];
-            for (var i = 0; i < model_surfaces.length; ++i) {
-                var verts = model_surfaces[i]['vertices'];
-                var material = model_surfaces[i]['material'];
+            var modelSurfaces = mapdata['model_surfaces'];
+            for (var i = 0; i < modelSurfaces.length; ++i) {
+                var verts = modelSurfaces[i]['vertices'];
+                var material = modelSurfaces[i]['material'];
 
                 var v0 = geometry.vertices.length;
                 for (var v = 0; v < verts.length; ++v) {
@@ -275,6 +331,7 @@
         }
 
         var nextTarget = null;
+        var scheduled = 0;
         function doUpdateTarget() {
             const maxDist = 5;
 
@@ -286,8 +343,8 @@
 
             var delta = new THREE.Vector3;
             delta.subVectors(nextTarget, controls.target);
-            if (delta.length() > 0.1) {
-                delta.setLength(0.1);
+            if (delta.length() > 0.2) {
+                delta.setLength(0.2);
             }
             else {
                 doneTarget = true;
@@ -310,8 +367,16 @@
                 nextTarget = null;
             }
             else {
-                window.setTimeout(doUpdateTarget, 10);
+                if (scheduled == 0) {
+                    ++scheduled;
+                    window.setTimeout(scheduledMoveToTarget, 10);
+                }
             }
+        }
+
+        function scheduledMoveToTarget() {
+            --scheduled;
+            doUpdateTarget();
         }
 
         function updateTarget(pos) {

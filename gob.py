@@ -66,9 +66,9 @@ class MultiGob:
         self.gobs = gobs
         self.filenames = filenames
         toc = {}
-        for i in range(len(gobs)):
-            for k in gobs[i].ls():
-                toc[k] = (gobs[i], filenames[i])
+        for i, gob in enumerate(gobs):
+            for j in gob.ls():
+                toc[j] = (gob, filenames[i])
         self.toc = toc
 
     def __enter__(self):

@@ -6,7 +6,6 @@ import io
 from PIL import Image, ImageFilter
 
 import cmp
-import episode
 import gob
 import jkl
 import mat
@@ -154,7 +153,7 @@ def _load_level(jkl_name, gobs, official=[]):
                     cm = cmp.read_from_bytes(
                         vfs.read(b'misc/cmp/' + colormap_name))
                 except:
-                    cm = None # colormap not found
+                    cm = None  # colormap not found
                 colormaps[colormap_name] = cm
             texcache.set_current_colormap(
                 colormap_name, colormaps[colormap_name])
@@ -197,7 +196,7 @@ def _load_level(jkl_name, gobs, official=[]):
                     models[filename] = threedo.read_from_bytes(
                         vfs.read(full_filename))
                 except:
-                    continue # model not found
+                    continue  # model not found
 
             colormap = sector_colormaps[instance['sector']]
             colormap_name = sector_colormap_names[instance['sector']]
@@ -210,11 +209,6 @@ def _load_level(jkl_name, gobs, official=[]):
         return surfaces, model_surfaces, texcache.materials
 
 
-def load_level_from_file(target):
-    # read the episode.jk file from the target
-    with gob.open_gob_file(target) as vfs:
-        info = episode.read_from_bytes(vfs.read(b'episode.jk'))
-
-    # the load the first level
+def load_level_from_gob(levelname, gob_path):
     OFFICIAL = ['Res1hi.gob', 'Res2.gob', 'JK1.GOB']
-    return _load_level(b'jkl/' + info.levels[0], gobs=[target] + OFFICIAL, official=OFFICIAL)
+    return _load_level(b'jkl/' + levelname, gobs=[gob_path] + OFFICIAL, official=OFFICIAL)
