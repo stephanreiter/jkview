@@ -50,6 +50,8 @@ class MaterialCache:
         self.official = official
         self.materials = []
         self.cache = {}
+        self.colormap_name = ''
+        self.colormap = None
 
     def set_current_colormap(self, colormap_name, colormap):
         self.colormap_name = colormap_name
@@ -153,15 +155,14 @@ def _load_level(jkl_name, gobs, official=[]):
         # but the palette part is always ignored.
 
         # so let's just use the master colormap for all sectors
+        texcache = MaterialCache(vfs, official)
         try:
             master_colormap_name = level.colormaps[0]
             master_colormap = cmp.read_from_bytes(
                 vfs.read(b'misc/cmp/' + master_colormap_name))
+            texcache.set_current_colormap(master_colormap_name, master_colormap)
         except:
-            master_colormap = None  # colormap not found
-
-        texcache = MaterialCache(vfs, official)
-        texcache.set_current_colormap(master_colormap_name, master_colormap)
+            pass
 
         # load sectors
         for k, sector in level.sectors.items():
