@@ -72,7 +72,7 @@
     <div id="progress"></div>
     <div id="mouseinfo" class="info">
         <b>{{title}}</b><br>
-        Rotate: left drag. Move: right drag. Zoom: wheel. Re-anchor: double-click.
+        Rotate: left drag. Move: right drag. Zoom: wheel (hold shift to zoom fast). Re-anchor: double-click.
     </div>
     <div id="touchinfo" class="info">
         <b>{{title}}</b><br>
@@ -88,6 +88,10 @@
     <script src="{{ url_for('static', filename='js/controls/OrbitControls.js') }}"></script>
 
     <script>
+        var isTouchDevice = (('ontouchstart' in window)
+            || (navigator.MaxTouchPoints > 0)
+            || (navigator.msMaxTouchPoints > 0));
+
         var maps = JSON.parse({{ maps| tojson | safe }});
         if (maps.length > 1) {
             var mapinfoList = document.getElementById('mapinfolist');
@@ -112,10 +116,6 @@
         }
 
         function showInfo() {
-            var isTouchDevice = (('ontouchstart' in window)
-                || (navigator.MaxTouchPoints > 0)
-                || (navigator.msMaxTouchPoints > 0));
-
             // show platform-specific info about controls
             // and fade the info out after 5 seconds
             var info = document.getElementById(isTouchDevice ? 'touchinfo' : 'mouseinfo');
@@ -329,7 +329,17 @@
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableKeys = false;
             controls.rotateSpeed = 0.25;
-            controls.zoomSpeed = 0.25;
+            controls.zoomSpeed = 0.5;
+
+            if (!isTouchDevice) {
+                // shift held speeds up zooming
+                window.addEventListener("keyup", function(ev) {
+                    if (ev.key == 'Shift') controls.zoomSpeed = 0.5;
+                });
+                window.addEventListener("keydown", function(ev) {
+                    if (ev.key == 'Shift') controls.zoomSpeed = 2;
+                });
+            }
 
             window.addEventListener('resize', onWindowResize, false);
 
