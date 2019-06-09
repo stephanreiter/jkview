@@ -58,6 +58,17 @@ class JklFile:
         templates = self._read_templates(sections[b'templates'])
         self._read_things(sections[b'things'], templates)
 
+        self._do_fixups()
+
+    def _do_fixups(self):
+        # some maps appear with pink textures, e.g. Massassi 3092 and 3051 - thanks ECHOMAN for pointing this out!
+        # those maps have two colormaps defined, of which the second one is dflt.cmp,
+        # and all sectors appear to reference the second one erroneously
+        # let's check for this condition and then fix the situation by using the colormap #0
+        if len(self.colormaps) == 2 and 1 in self.colormaps and self.colormaps[1] == b'dflt.cmp':
+            if all([s['colormap'] == 1 for s in self.sectors.values()]):
+                self.colormaps[1] = self.colormaps[0]
+
     def _prune_materials(self):
         used_materials = {}
         for k, s in self.surfaces.items():
@@ -193,7 +204,7 @@ class JklFile:
         config = {}
         for cfgpair in text.split():
             if cfgpair == b'-1':
-                continue #MotS
+                continue  # MotS
             k, v = cfgpair.split(b'=')
             config[k] = v
         return config
