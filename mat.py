@@ -1,6 +1,8 @@
 import io
 import itertools
+import os
 import struct
+import sys
 
 from PIL import Image, ImageOps
 
@@ -127,3 +129,18 @@ def load_frames_from_file(f, colormap=None):
 
 def load_frames_from_bytes(b, colormap=None):
     return load_frames_from_file(io.BytesIO(b), colormap=colormap)
+
+
+if __name__ == "__main__":
+    colormap = None
+    if len(sys.argv) > 2:
+        import cmp
+        with open(sys.argv[2], 'rb') as cmpfile:
+            colormap = cmp.read_from_file(cmpfile)
+
+    with open(sys.argv[1], 'rb') as matfile:
+        frames = load_frames_from_file(matfile, colormap=colormap)
+
+    with io.BytesIO() as output:
+        frames[0].save(output, format='PNG')
+        os.write(1, output.getvalue())  # write to stdout

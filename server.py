@@ -17,8 +17,14 @@ import loader
 app = Flask(__name__)
 Compress(app)
 
-CENSOR_ALWAYS = False  # enable to avoid extraction of full-resolution assets on server
-VERSION = 1  # increment to invalidate client caches
+# enable CENSOR_ALWAYS to avoid extraction of full-resolution assets on server
+CENSOR_ALWAYS = False
+
+# enable ALWAYS_REGEN to regenerate level data on every request. FOR DEVELOPMENT ONLY!
+ALWAYS_REGEN = False
+
+# increment VERSION to invalidate caches
+VERSION = 2
 
 DOWNLOAD_LINK_RE = re.compile(
     br'<meta http-equiv="Refresh" content="2; URL=(https://www.massassi.net/files/levels/.+.zip)">')
@@ -86,7 +92,7 @@ def _extract_level(level_id):
                         _atomically_dump(gob_file, gob_path)
                     break
 
-    level_info = {'title': 'Unknown', 'maps': []}
+    level_info = {'version': VERSION, 'title': 'Unknown', 'maps': []}
     try:
         # read the episode.jk file from the target
         with gob.open_gob_file(gob_path) as vfs:
@@ -122,7 +128,8 @@ def _extract_level(level_id):
                             material_imgkey in mat) else ''
                     else:
                         data = ''
-                    material_data.append(data)
+                    material_data.append(
+                        {'data': data, 'name': mat['name'].decode()})
 
                 matjs_filename = 'mat{0}.json'.format(
                     '' if censor else '-full')
@@ -138,12 +145,14 @@ def _extract_level(level_id):
                                     'wt', json.dumps(map_data))
 
             if levelname.endswith(b'.jkl'):
-                levelname = levelname[:-4] # drop .jkl suffix
+                levelname = levelname[:-4]  # drop .jkl suffix
             level_info['maps'].append(levelname.decode())
     finally:
         # always write the file to avoid retrying the extraction
         _write_cache_atomically(level_id, 'all', 'mapinfo.json',
                                 'wt', json.dumps(level_info))
+
+    return level_info
 
 
 def _serve_map_data(level_id, episode_id):
@@ -157,15 +166,22 @@ def _serve_material_data(level_id, episode_id):
     return send_from_directory('cache', '{0}-{1}-{2}'.format(level_id, episode_id, matjs_filename))
 
 
-def _serve_map(level_id, url_has_episode):
+def _get_mapinfo(level_id):
     level_id = int(level_id)  # sanitize
 
-    mapinfo_path = _get_cache_filename(level_id, 'all', 'mapinfo.json')
-    if not os.path.exists(mapinfo_path):
-        _extract_level(level_id)
+    if not ALWAYS_REGEN:
+        mapinfo_path = _get_cache_filename(level_id, 'all', 'mapinfo.json')
+        if os.path.exists(mapinfo_path):
+            with open(mapinfo_path, 'rt') as f:
+                level_info = json.loads(f.read())
+                if 'version' in level_info and level_info['version'] == VERSION:
+                    return level_info  # cached info exists and has correct version. use it!
 
-    with open(mapinfo_path, 'rt') as f:
-        level_info = json.loads(f.read())
+    return _extract_level(level_id)
+
+
+def _serve_map(level_id, url_has_episode):
+    level_info = _get_mapinfo(level_id)
 
     censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
 

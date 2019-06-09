@@ -67,7 +67,7 @@ class MaterialCache:
                     is_official = self.vfs.src(
                         material_full_name) in self.official
                     material = _make_material_from_frames(frames, is_official)
-                    material['official'] = is_official
+                    material['name'] = material_full_name
                 except KeyError:
                     pass
 
