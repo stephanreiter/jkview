@@ -24,7 +24,7 @@ CENSOR_ALWAYS = False
 ALWAYS_REGEN = False
 
 # increment VERSION to invalidate caches
-VERSION = 2
+VERSION = 3
 
 DOWNLOAD_LINK_RE = re.compile(
     br'<meta http-equiv="Refresh" content="2; URL=(https://www.massassi.net/files/levels/.+.zip)">')

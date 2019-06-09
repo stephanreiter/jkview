@@ -137,30 +137,34 @@ def _load_level(jkl_name, gobs, official=[]):
     with gob.open_gob_files(gobs) as vfs:
         surfaces = []
 
-        colormaps = {}
-        sector_colormaps = {}
-        sector_colormap_names = {}
+        level = jkl.read_from_bytes(vfs.read(jkl_name))
+
+        # in a previous version we used the per sector colormap for loading materials
+        # this made some maps appear with pink textures, e.g. Massassi 3092 and 3051 -
+        # thanks ECHOMAN for pointing this out!
+
+        # jdmclark explained that: "Jedi Knight handles colormaps differently depending
+        # on whether it's using the software or hardware renderer. In software mode,
+        # the game applies the colormap from the camera's containing sector to the whole
+        # screen (hardware palettized 8-bit). With the hardware renderer, the game always
+        # uses colormap 0 (called the master colormap) to convert textures to 16-bit as
+        # they're loaded. The hardware renderer doesn't totally ignore the sector
+        # colormaps - it uses some tint fields from their headers for special effects -
+        # but the palette part is always ignored.
+
+        # so let's just use the master colormap for all sectors
+        try:
+            master_colormap_name = level.colormaps[0]
+            master_colormap = cmp.read_from_bytes(
+                vfs.read(b'misc/cmp/' + master_colormap_name))
+        except:
+            master_colormap = None  # colormap not found
 
         texcache = MaterialCache(vfs, official)
-
-        level = jkl.read_from_bytes(vfs.read(jkl_name))
+        texcache.set_current_colormap(master_colormap_name, master_colormap)
 
         # load sectors
         for k, sector in level.sectors.items():
-            colormap_name = level.colormaps[sector['colormap']]
-            if not colormap_name in colormaps:
-                try:
-                    cm = cmp.read_from_bytes(
-                        vfs.read(b'misc/cmp/' + colormap_name))
-                except:
-                    cm = None  # colormap not found
-                colormaps[colormap_name] = cm
-            texcache.set_current_colormap(
-                colormap_name, colormaps[colormap_name])
-
-            sector_colormaps[k] = colormaps[colormap_name]
-            sector_colormap_names[k] = colormap_name
-
             for s in range(sector['surfaces'][0], sector['surfaces'][1]):
                 surface = level.surfaces[s]
                 if surface['geo'] != 4:
@@ -186,9 +190,6 @@ def _load_level(jkl_name, gobs, official=[]):
         models = {}
         model_surfaces = []
         for instance in level.models:
-            if instance['sector'] == -1:
-                continue  # model is in no sector, TODO: use default colormap?
-
             filename = instance['model']
             if not filename in models:
                 full_filename = b'3do/' + filename
@@ -197,11 +198,6 @@ def _load_level(jkl_name, gobs, official=[]):
                         vfs.read(full_filename))
                 except:
                     continue  # model not found
-
-            colormap = sector_colormaps[instance['sector']]
-            colormap_name = sector_colormap_names[instance['sector']]
-            texcache.set_current_colormap(
-                colormap_name, colormaps[colormap_name])
 
             model_surfaces.extend(_instantiate_model(
                 models[filename], instance['pos'], instance['rot'], texcache))
