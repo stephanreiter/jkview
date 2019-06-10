@@ -72,7 +72,7 @@
     <div id="progress"></div>
     <div id="mouseinfo" class="info">
         <b>{{title}}</b><br>
-        Rotate: left drag. Move: right drag. Zoom: wheel. Re-anchor: double-click.
+        Rotate: left drag. Move: right drag. Zoom: wheel (hold shift to zoom fast). Re-anchor: double-click.
     </div>
     <div id="touchinfo" class="info">
         <b>{{title}}</b><br>
@@ -88,6 +88,10 @@
     <script src="{{ url_for('static', filename='js/controls/OrbitControls.js') }}"></script>
 
     <script>
+        var isTouchDevice = (('ontouchstart' in window)
+            || (navigator.MaxTouchPoints > 0)
+            || (navigator.msMaxTouchPoints > 0));
+
         var maps = JSON.parse({{ maps| tojson | safe }});
         if (maps.length > 1) {
             var mapinfoList = document.getElementById('mapinfolist');
@@ -112,15 +116,11 @@
         }
 
         function showInfo() {
-            var isTouchDevice = (('ontouchstart' in window)
-                || (navigator.MaxTouchPoints > 0)
-                || (navigator.msMaxTouchPoints > 0));
-
             // show platform-specific info about controls
             // and fade the info out after 5 seconds
             var info = document.getElementById(isTouchDevice ? 'touchinfo' : 'mouseinfo');
             info.style.visibility = "visible";
-            info.addEventListener('click', function() {
+            info.addEventListener('click', function () {
                 info.style.opacity = '0';
             }, false);
             window.setTimeout(function () {
@@ -152,7 +152,7 @@
             }
         }
 
-        var camera, controls, scene, renderer, mesh, materialArray;
+        var camera, controls, scene, renderer, geometry, mesh, materialArray;
 
         var progressDone = false;
         progress.setText("Loading ...");
@@ -190,7 +190,7 @@
                 materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[i] }));
             }
 
-            var geometry = new THREE.Geometry();
+            geometry = new THREE.Geometry();
             geometry.faceVertexUvs[0] = [];
             geometry.uvsNeedUpdate = true;
 
@@ -280,14 +280,16 @@
             var loader = new THREE.TextureLoader();
             for (var i = 0; i < matdata.length; ++i) {
                 if (matdata[i] != '') {
-                    var onLoaded = function (mats, idx) {
+                    var onLoaded = function (mats, idx, name) {
                         return function (tex) {
                             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
                             mats[idx] = new THREE.MeshBasicMaterial({ 'map': tex });
+                            // FOR DEVELOPMENT: allow material name queries
+                            // mats[idx].name = name;
                             animate();
                         };
-                    }(materialArray, i);
-                    loader.load(matdata[i], onLoaded);
+                    }(materialArray, i, matdata[i]['name']);
+                    loader.load(matdata[i]['data'], onLoaded);
                 }
             }
         }
@@ -329,7 +331,17 @@
             controls = new THREE.OrbitControls(camera, renderer.domElement);
             controls.enableKeys = false;
             controls.rotateSpeed = 0.25;
-            controls.zoomSpeed = 0.25;
+            controls.zoomSpeed = 0.5;
+
+            if (!isTouchDevice) {
+                // shift held speeds up zooming
+                window.addEventListener("keyup", function (ev) {
+                    if (ev.key == 'Shift') controls.zoomSpeed = 0.5;
+                });
+                window.addEventListener("keydown", function (ev) {
+                    if (ev.key == 'Shift') controls.zoomSpeed = 2;
+                });
+            }
 
             window.addEventListener('resize', onWindowResize, false);
 
@@ -411,6 +423,9 @@
             if (intersects.length > 0) {
                 var first = intersects[0];
                 updateTarget(first.point);
+                // FOR DEVELOPMENT: determine material at intersected point
+                // var mat = geometry.faces[first.faceIndex].materialIndex;
+                // alert(materialArray[mat].name);
             }
         }
 

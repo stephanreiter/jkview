@@ -193,7 +193,7 @@ class JklFile:
         config = {}
         for cfgpair in text.split():
             if cfgpair == b'-1':
-                continue #MotS
+                continue  # MotS
             k, v = cfgpair.split(b'=')
             config[k] = v
         return config

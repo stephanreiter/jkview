@@ -1,3 +1,4 @@
+import os
 import struct
 import sys
 
@@ -113,4 +114,4 @@ if __name__ == "__main__":
         for name in gobfile.ls():
             data = gobfile.read(name)
             print(name, len(data), file=sys.stderr)
-        print(gobfile.read(sys.argv[2].encode()).decode())
+        os.write(1, gobfile.read(sys.argv[2].encode())) # write to stdout
