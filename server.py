@@ -24,7 +24,7 @@ CENSOR_ALWAYS = False
 ALWAYS_REGEN = False
 
 # increment VERSION to invalidate caches
-VERSION = 3
+VERSION = 4
 
 DOWNLOAD_LINK_RE = re.compile(
     br'<meta http-equiv="Refresh" content="2; URL=(https://www.massassi.net/files/levels/.+.zip)">')
@@ -126,10 +126,10 @@ def _extract_level(level_id):
                         material_imgkey = 'lowres' if censored else 'image'
                         data = _encode_image(mat[material_imgkey], mat['mime']) if (
                             material_imgkey in mat) else ''
+                        material_data.append(
+                            {'data': data, 'name': mat['name'].decode()})
                     else:
-                        data = ''
-                    material_data.append(
-                        {'data': data, 'name': mat['name'].decode()})
+                        material_data.append({'data': '', 'name': ''})
 
                 matjs_filename = 'mat{0}.json'.format(
                     '' if censor else '-full')
