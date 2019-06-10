@@ -87,7 +87,8 @@ def _extract_level(level_id):
             # locate the first gob file and write its contents atomically to gob_path
             # note: MotS used goo as the extension: we'll also take that if found!
             for info in level_zip.infolist():
-                if info.filename.endswith('.gob') or info.filename.endswith('.goo'):
+                filename = info.filename.lower() # case insensitive extension check:
+                if filename.endswith('.gob') or filename.endswith('.goo'):
                     with level_zip.open(info) as gob_file:
                         _atomically_dump(gob_file, gob_path)
                     break
@@ -101,52 +102,57 @@ def _extract_level(level_id):
         level_info['title'] = info.title.decode()
 
         for levelname in info.levels:
-            episode_id = len(level_info['maps'])
+            try:
+                episode_id = len(level_info['maps'])
 
-            surfaces, model_surfaces, materials = loader.load_level_from_gob(
-                levelname, gob_path)
+                surfaces, model_surfaces, materials = loader.load_level_from_gob(
+                    levelname, gob_path)
 
-            # devide vertex UVs by texture sizes
-            for src in [surfaces, model_surfaces]:
-                for surf in src:
-                    mat = materials[surf['material']]
-                    if mat and 'dims' in mat:
-                        sclu = 1.0 / mat['dims'][0]
-                        sclv = 1.0 / mat['dims'][1]
-                        for v in surf['vertices']:
-                            v[1] = (v[1][0] * sclu, v[1][1] * sclv)
+                # devide vertex UVs by texture sizes
+                for src in [surfaces, model_surfaces]:
+                    for surf in src:
+                        mat = materials[surf['material']]
+                        if mat and 'dims' in mat:
+                            sclu = 1.0 / mat['dims'][0]
+                            sclv = 1.0 / mat['dims'][1]
+                            for v in surf['vertices']:
+                                v[1] = (v[1][0] * sclu, v[1][1] * sclv)
 
-            # write censored and uncensored material data to mat.js
-            censor_states = [True] if CENSOR_ALWAYS else [True, False]
-            for censor in censor_states:
-                material_data = []
-                for mat in materials:
-                    if mat:
-                        censored = censor and 'lowres' in mat
-                        material_imgkey = 'lowres' if censored else 'image'
-                        data = _encode_image(mat[material_imgkey], mat['mime']) if (
-                            material_imgkey in mat) else ''
-                        material_data.append(
-                            {'data': data, 'name': mat['name'].decode()})
-                    else:
-                        material_data.append({'data': '', 'name': ''})
+                # write censored and uncensored material data to mat.js
+                censor_states = [True] if CENSOR_ALWAYS else [True, False]
+                for censor in censor_states:
+                    material_data = []
+                    for mat in materials:
+                        if mat:
+                            censored = censor and 'lowres' in mat
+                            material_imgkey = 'lowres' if censored else 'image'
+                            data = _encode_image(mat[material_imgkey], mat['mime']) if (
+                                material_imgkey in mat) else ''
+                            material_data.append(
+                                {'data': data, 'name': mat['name'].decode()})
+                        else:
+                            material_data.append({'data': '', 'name': ''})
 
-                matjs_filename = 'mat{0}.json'.format(
-                    '' if censor else '-full')
-                _write_cache_atomically(level_id, episode_id, matjs_filename,
-                                        'wt', json.dumps(material_data))
+                    matjs_filename = 'mat{0}.json'.format(
+                        '' if censor else '-full')
+                    _write_cache_atomically(level_id, episode_id, matjs_filename,
+                                            'wt', json.dumps(material_data))
 
-            # assemble map data
-            material_colors = [_encode_color(
-                mat['color']) if mat else '#000000' for mat in materials]
-            map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces,
-                        'material_colors': material_colors}
-            _write_cache_atomically(level_id, episode_id, 'map.json',
-                                    'wt', json.dumps(map_data))
+                # assemble map data
+                material_colors = [_encode_color(
+                    mat['color']) if mat else '#000000' for mat in materials]
+                map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces,
+                            'material_colors': material_colors}
+                _write_cache_atomically(level_id, episode_id, 'map.json',
+                                        'wt', json.dumps(map_data))
 
-            if levelname.endswith(b'.jkl'):
-                levelname = levelname[:-4]  # drop .jkl suffix
-            level_info['maps'].append(levelname.decode())
+                if levelname.endswith(b'.jkl'):
+                    levelname = levelname[:-4]  # drop .jkl suffix
+                level_info['maps'].append(levelname.decode())
+            except:
+                continue # try the other maps in the episode
+    except:
+        pass # well ... not much we can do
     finally:
         # always write the file to avoid retrying the extraction
         _write_cache_atomically(level_id, 'all', 'mapinfo.json',

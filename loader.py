@@ -207,5 +207,5 @@ def _load_level(jkl_name, gobs, official=[]):
 
 
 def load_level_from_gob(levelname, gob_path):
-    OFFICIAL = ['Res1hi.gob', 'Res2.gob', 'JK1.GOB']
+    OFFICIAL = ['Res1hi.gob', 'Res2.gob', 'JKMRES.GOO']
     return _load_level(b'jkl/' + levelname, gobs=[gob_path] + OFFICIAL, official=OFFICIAL)
