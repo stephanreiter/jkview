@@ -65,7 +65,6 @@ def open_gob_file(filename):
 class MultiGob:
     def __init__(self, gobs, filenames):
         self.gobs = gobs
-        self.filenames = filenames
         toc = {}
         for i, gob in enumerate(gobs):
             for j in gob.ls():
@@ -107,6 +106,19 @@ class MultiGob:
 def open_gob_files(filenames):
     gobs = [open_gob_file(f) for f in filenames]
     return MultiGob(gobs, filenames)
+
+
+def try_open_gob_files(filenames):
+    ok_gobs = []
+    ok_filenames = []
+    for filename in filenames:
+        try:
+            f = open_gob_file(filename)
+        except:
+            continue # skip if we failed to open the file
+        ok_gobs.append(f)
+        ok_filenames.append(filename)
+    return MultiGob(ok_gobs, ok_filenames)
 
 
 if __name__ == "__main__":

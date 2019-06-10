@@ -136,7 +136,7 @@ def _instantiate_model(model, pos, rot, texcache):
 
 
 def _load_level(jkl_name, gobs, official=[]):
-    with gob.open_gob_files(gobs) as vfs:
+    with gob.try_open_gob_files(gobs) as vfs:
         surfaces = []
 
         level = jkl.read_from_bytes(vfs.read(jkl_name))
