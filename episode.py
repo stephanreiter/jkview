@@ -1,6 +1,7 @@
 import io
 import re
 import struct
+import sys
 
 ITEM_RE = re.compile(
     br'(\d+):\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(-?\d+)\s+(-?\d+)')
@@ -47,3 +48,10 @@ def read_from_file(f):
 
 def read_from_bytes(b):
     return read_from_file(io.BytesIO(b))
+
+
+if __name__ == "__main__":
+    with open(sys.argv[1], 'rt') as f:
+        e = read_from_bytes(f.read().encode())
+        print(e.title)
+        print(e.levels)
