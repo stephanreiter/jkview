@@ -72,7 +72,7 @@
     <div id="progress"></div>
     <div id="mouseinfo" class="info">
         <b>{{title}}</b><br>
-        Rotate: left drag. Move: right drag. Zoom: wheel (hold shift to zoom fast). Re-anchor: double-click.
+        Rotate: left drag. Move: right drag. Zoom: wheel (hold Alt to zoom fast). Re-anchor: double-click.
     </div>
     <div id="touchinfo" class="info">
         <b>{{title}}</b><br>
@@ -334,12 +334,12 @@
             controls.zoomSpeed = 0.5;
 
             if (!isTouchDevice) {
-                // shift held speeds up zooming
+                // alt held speeds up zooming
                 window.addEventListener("keyup", function (ev) {
-                    if (ev.key == 'Shift') controls.zoomSpeed = 0.5;
+                    if (ev.key == 'Alt') controls.zoomSpeed = 0.5;
                 });
                 window.addEventListener("keydown", function (ev) {
-                    if (ev.key == 'Shift') controls.zoomSpeed = 2;
+                    if (ev.key == 'Alt') controls.zoomSpeed = 2;
                 });
             }
 
