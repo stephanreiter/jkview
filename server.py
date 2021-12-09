@@ -24,7 +24,7 @@ CENSOR_ALWAYS = False
 ALWAYS_REGEN = False
 
 # increment VERSION to invalidate caches
-VERSION = 3
+VERSION = 5
 
 DOWNLOAD_LINK_RE = re.compile(
     br'<meta http-equiv="Refresh" content="2; URL=(https://www.massassi.net/files/levels/.+.zip)">')
@@ -74,20 +74,27 @@ def _extract_level(level_id):
 
     gob_path = os.path.join('downloads', '{}.gob'.format(level_id))
     if not os.path.isfile(gob_path):
-        zip_path = os.path.join('downloads', '{}.zip'.format(level_id))
-        if not os.path.isfile(zip_path):
-            url = 'https://www.massassi.net/levels/download_level.php?level_id={}'.format(
-                level_id)
-            with urllib.request.urlopen(url) as page:
-                zip_url = _find_download_link(page.read())
-            with urllib.request.urlopen(zip_url) as level_zip:
-                _atomically_dump(level_zip, zip_path)
+        fixup_path = os.path.join('fixups', '{}.zip'.format(level_id))
+        if os.path.isfile(fixup_path):
+            zip_path = fixup_path
+        else:
+            zip_path = os.path.join('downloads', '{}.zip'.format(level_id))
+            if not os.path.isfile(zip_path):
+                url = 'https://www.massassi.net/levels/download_level.php?level_id={}'.format(
+                    level_id)
+                with urllib.request.urlopen(url) as page:
+                    zip_url = _find_download_link(page.read())
+                with urllib.request.urlopen(zip_url) as level_zip:
+                    _atomically_dump(level_zip, zip_path)
 
         with zipfile.ZipFile(zip_path) as level_zip:
             # locate the first gob file and write its contents atomically to gob_path
             # note: MotS used goo as the extension: we'll also take that if found!
+            # TODO: deal with multiple gobs in zip, e.g. Rebel Agent (level 1900)
             for info in level_zip.infolist():
-                if info.filename.endswith('.gob') or info.filename.endswith('.goo'):
+                # case insensitive extension check:
+                filename = info.filename.lower()
+                if filename.endswith('.gob') or filename.endswith('.goo'):
                     with level_zip.open(info) as gob_file:
                         _atomically_dump(gob_file, gob_path)
                     break
@@ -101,52 +108,57 @@ def _extract_level(level_id):
         level_info['title'] = info.title.decode()
 
         for levelname in info.levels:
-            episode_id = len(level_info['maps'])
+            try:
+                episode_id = len(level_info['maps'])
 
-            surfaces, model_surfaces, materials = loader.load_level_from_gob(
-                levelname, gob_path)
+                surfaces, model_surfaces, materials = loader.load_level_from_gob(
+                    levelname, gob_path)
 
-            # devide vertex UVs by texture sizes
-            for src in [surfaces, model_surfaces]:
-                for surf in src:
-                    mat = materials[surf['material']]
-                    if mat and 'dims' in mat:
-                        sclu = 1.0 / mat['dims'][0]
-                        sclv = 1.0 / mat['dims'][1]
-                        for v in surf['vertices']:
-                            v[1] = (v[1][0] * sclu, v[1][1] * sclv)
+                # devide vertex UVs by texture sizes
+                for src in [surfaces, model_surfaces]:
+                    for surf in src:
+                        mat = materials[surf['material']]
+                        if mat and 'dims' in mat:
+                            sclu = 1.0 / mat['dims'][0]
+                            sclv = 1.0 / mat['dims'][1]
+                            for v in surf['vertices']:
+                                v[1] = (v[1][0] * sclu, v[1][1] * sclv)
 
-            # write censored and uncensored material data to mat.js
-            censor_states = [True] if CENSOR_ALWAYS else [True, False]
-            for censor in censor_states:
-                material_data = []
-                for mat in materials:
-                    if mat:
-                        censored = censor and 'lowres' in mat
-                        material_imgkey = 'lowres' if censored else 'image'
-                        data = _encode_image(mat[material_imgkey], mat['mime']) if (
-                            material_imgkey in mat) else ''
-                    else:
-                        data = ''
-                    material_data.append(
-                        {'data': data, 'name': mat['name'].decode()})
+                # write censored and uncensored material data to mat.js
+                censor_states = [True] if CENSOR_ALWAYS else [True, False]
+                for censor in censor_states:
+                    material_data = []
+                    for mat in materials:
+                        if mat:
+                            censored = censor and 'lowres' in mat
+                            material_imgkey = 'lowres' if censored else 'image'
+                            data = _encode_image(mat[material_imgkey], mat['mime']) if (
+                                material_imgkey in mat) else ''
+                            material_data.append(
+                                {'data': data, 'name': mat['name'].decode()})
+                        else:
+                            material_data.append({'data': '', 'name': ''})
 
-                matjs_filename = 'mat{0}.json'.format(
-                    '' if censor else '-full')
-                _write_cache_atomically(level_id, episode_id, matjs_filename,
-                                        'wt', json.dumps(material_data))
+                    matjs_filename = 'mat{0}.json'.format(
+                        '' if censor else '-full')
+                    _write_cache_atomically(level_id, episode_id, matjs_filename,
+                                            'wt', json.dumps(material_data))
 
-            # assemble map data
-            material_colors = [_encode_color(
-                mat['color']) if mat else '#000000' for mat in materials]
-            map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces,
-                        'material_colors': material_colors}
-            _write_cache_atomically(level_id, episode_id, 'map.json',
-                                    'wt', json.dumps(map_data))
+                # assemble map data
+                material_colors = [_encode_color(
+                    mat['color']) if mat else '#000000' for mat in materials]
+                map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces,
+                            'material_colors': material_colors}
+                _write_cache_atomically(level_id, episode_id, 'map.json',
+                                        'wt', json.dumps(map_data))
 
-            if levelname.endswith(b'.jkl'):
-                levelname = levelname[:-4]  # drop .jkl suffix
-            level_info['maps'].append(levelname.decode())
+                if levelname.endswith(b'.jkl'):
+                    levelname = levelname[:-4]  # drop .jkl suffix
+                level_info['maps'].append(levelname.decode())
+            except:
+                continue  # try the other maps in the episode
+    except:
+        pass  # well ... not much we can do
     finally:
         # always write the file to avoid retrying the extraction
         _write_cache_atomically(level_id, 'all', 'mapinfo.json',
@@ -166,6 +178,13 @@ def _serve_material_data(level_id, episode_id):
     return send_from_directory('cache', '{0}-{1}-{2}'.format(level_id, episode_id, matjs_filename))
 
 
+def _is_fixup_available(level_id):
+    level_id = int(level_id)  # sanitize
+
+    fixup_path = os.path.join('fixups', '{}.zip'.format(level_id))
+    return os.path.isfile(fixup_path)
+
+
 def _get_mapinfo(level_id):
     level_id = int(level_id)  # sanitize
 
@@ -175,7 +194,10 @@ def _get_mapinfo(level_id):
             with open(mapinfo_path, 'rt') as f:
                 level_info = json.loads(f.read())
                 if 'version' in level_info and level_info['version'] == VERSION:
-                    return level_info  # cached info exists and has correct version. use it!
+                    try_regen = not level_info['maps'] and _is_fixup_available(
+                        level_id)
+                    if not try_regen:
+                        return level_info  # cached info exists and has correct version. use it!
 
     return _extract_level(level_id)
 

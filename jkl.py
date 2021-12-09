@@ -229,8 +229,9 @@ class JklFile:
                 sector = int(match.group(16))
                 config = self._read_config(
                     match.group(17)) if match.group(17) else {}
-                # merge: overwrite values of template with new ones
-                config = {**templates[template], **config}
+                if template in templates:
+                    # merge: overwrite values of template with new ones
+                    config = {**templates[template], **config}
 
                 if b'model3d' in config:
                     mdl = {'pos': (x, y, z), 'rot': (

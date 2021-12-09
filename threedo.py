@@ -83,6 +83,9 @@ class ThreedoFile:
                 root_node = n
             del n['parent']  # no longer need this bit
 
+        if not root_node:
+            raise Exception("No root node!")
+
         self.root_node = root_node
 
     def _read_geometry(self, lines):
