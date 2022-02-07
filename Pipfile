@@ -8,6 +8,6 @@ verify_ssl = true
 [packages]
 flask-compress = "*"
 transformations = "*"
-pillow = ">=6.2.2"
+pillow = ">=9.0.0"
 flask = "*"
 gunicorn = "*"
