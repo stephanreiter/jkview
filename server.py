@@ -24,11 +24,19 @@ CENSOR_ALWAYS = False
 ALWAYS_REGEN = False
 
 # increment VERSION to invalidate caches
-VERSION = 5
+VERSION = 6
 
+# comment embedded in the level info page now provides a direct download link
+# so we don't have to call "download_level.php" to get the actual download
+# (which increases level download counts).
 DOWNLOAD_LINK_RE = re.compile(
-    br'<meta http-equiv="Refresh" content="2; URL=(https://www.massassi.net/files/levels/.+.zip)">')
+    br'<!-- DIRECT DOWNLOAD: \d+ (/.+.zip) -->')
 
+# The base url for downloads.  For main massassi server this is usually
+# "https://www.massassi.net".  Setting it via an environment variable so I can
+# easily query other servers (for example local dev containers or massassi dev
+# server which is served off a different url).
+DOWNLOAD_BASE_URL = os.getenv('DOWNLOAD_BASE_URL')
 
 def _find_download_link(trampoline_html):
     match = DOWNLOAD_LINK_RE.search(trampoline_html)
@@ -39,7 +47,7 @@ def _atomically_dump(f, target_path):
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
         try:
             shutil.copyfileobj(f, tmp_file)
-            os.rename(tmp_file.name, target_path)
+            shutil.move(tmp_file.name, target_path)
         except:
             os.remove(tmp_file.name)
             raise
@@ -55,7 +63,7 @@ def _write_cache_atomically(level_id, episode_id, filename, mode, data):
         try:
             with open(tmp_file.name, mode) as f:
                 f.write(data)
-            os.rename(tmp_file.name, target_path)
+            shutil.move(tmp_file.name, target_path)
         except:
             os.remove(tmp_file.name)
             raise
@@ -80,11 +88,10 @@ def _extract_level(level_id):
         else:
             zip_path = os.path.join('downloads', '{}.zip'.format(level_id))
             if not os.path.isfile(zip_path):
-                url = 'https://www.massassi.net/levels/download_level.php?level_id={}'.format(
-                    level_id)
+                url = DOWNLOAD_BASE_URL + '/levels/files/{}.shtml'.format(level_id)
                 with urllib.request.urlopen(url) as page:
                     zip_url = _find_download_link(page.read())
-                with urllib.request.urlopen(zip_url) as level_zip:
+                with urllib.request.urlopen(DOWNLOAD_BASE_URL + zip_url) as level_zip:
                     _atomically_dump(level_zip, zip_path)
 
         with zipfile.ZipFile(zip_path) as level_zip:
