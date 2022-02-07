@@ -47,7 +47,7 @@ def _atomically_dump(f, target_path):
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
         try:
             shutil.copyfileobj(f, tmp_file)
-            os.rename(tmp_file.name, target_path)
+            shutil.move(tmp_file.name, target_path)
         except:
             os.remove(tmp_file.name)
             raise
@@ -63,7 +63,7 @@ def _write_cache_atomically(level_id, episode_id, filename, mode, data):
         try:
             with open(tmp_file.name, mode) as f:
                 f.write(data)
-            os.rename(tmp_file.name, target_path)
+            shutil.move(tmp_file.name, target_path)
         except:
             os.remove(tmp_file.name)
             raise
