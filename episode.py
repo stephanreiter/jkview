@@ -1,6 +1,5 @@
 import io
 import re
-import struct
 import sys
 
 ITEM_RE = re.compile(
