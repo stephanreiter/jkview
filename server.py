@@ -3,12 +3,12 @@ from flask_compress import Compress
 
 import base64
 import hashlib
+import io
 import json
 import os
-import re
+import requests
 import shutil
 import tempfile
-import urllib.request
 import urllib.parse
 import zipfile
 
@@ -78,7 +78,8 @@ def _extract_level(zip_url):
     if not os.path.isfile(gob_path):
         zip_path = os.path.join('downloads', '{}.zip'.format(level_id))
         if not os.path.isfile(zip_path):
-            with urllib.request.urlopen(zip_url) as level_zip:
+            r = requests.get(zip_url)
+            with io.BytesIO(r.content) as level_zip:
                 _atomically_dump(level_zip, zip_path)
 
         with zipfile.ZipFile(zip_path) as level_zip:
