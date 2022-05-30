@@ -96,17 +96,15 @@
         if (maps.length > 1) {
             var mapinfoList = document.getElementById('mapinfolist');
             for (var i = 0; i < maps.length; ++i) {
-                var name = maps[i];
+                var name_and_link = maps[i];
+                var name = name_and_link[0];
 
                 var linkText = document.createTextNode(name);
 
                 var a = document.createElement('a');
                 a.appendChild(linkText);
                 a.title = "Switch to map " + name;
-                if (i == 0)
-                    a.href = "{{link_adjust}}{{ ownsgame|safe }}";
-                else
-                    a.href = "{{link_adjust}}" + i + "/{{ ownsgame|safe }}";
+                a.href = name_and_link[1];
 
                 var li = document.createElement("li");
                 li.appendChild(a);
