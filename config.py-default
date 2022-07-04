@@ -1,0 +1,21 @@
+#
+# The default configuration file.  Rename or copy it to `config.py`
+# and change the values to suit your installation.
+#
+
+# enable CENSOR_ALWAYS to avoid extraction of full-resolution assets on server
+CENSOR_ALWAYS = False
+
+# enable ALWAYS_REGEN to regenerate level data on every request.
+# FOR DEVELOPMENT ONLY!
+ALWAYS_REGEN = False
+
+# increment VERSION to invalidate caches
+VERSION = 7
+
+# allowed prefixes for level URLs
+ALLOWED_URL_PREFIXES = [
+    'https://www.massassi.net/media/levels/files/',
+    'https://www.jkdf2.net/JKBot/JKArchive/JKDF2/JKDF2/',
+    'https://jkdf2.net/JKBot/JKArchive/JKDF2/JKDF2/',
+]
