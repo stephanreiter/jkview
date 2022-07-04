@@ -19,17 +19,7 @@ import loader
 app = Flask(__name__)
 Compress(app)
 
-# enable CENSOR_ALWAYS to avoid extraction of full-resolution assets on server
-CENSOR_ALWAYS = False
-
-# enable ALWAYS_REGEN to regenerate level data on every request. FOR DEVELOPMENT ONLY!
-ALWAYS_REGEN = False
-
-# increment VERSION to invalidate caches
-VERSION = 7
-
-# allowed prefixes for level URLs
-ALLOWED_URL_PREFIXES = ['https://www.massassi.net/media/levels/files/']
+from config import *
 
 
 def _atomically_dump(f, target_path):
