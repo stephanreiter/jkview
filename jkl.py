@@ -5,32 +5,33 @@ SUBSECTION_RE = re.compile(br'(.+)\s+\d+\Z')  # [ITEM TYPE] [COUNT]EOL
 ITEM_RE = re.compile(br'(\d+):')  # [IDX]: ...
 CMP_RE = re.compile(br'(\d+):\s+(\S+)')  # [IDX]: [FILENAME]
 # [IDX]: [FILENAME] 1 1
+FLOAT_FRAGMENT = r'-?\d*(\.\d+)?(?:[eE][-+]?\d+)?'
 MATERIAL_RE = re.compile(
-    br'(\d+):\s+(\S+)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
+    fr'(\d+):\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})'.encode())
 POSXYZ_RE = re.compile(
-    br'(\d+):\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')  # [IDX]: [F] [F] [F]
+    fr'(\d+):\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})'.encode())  # [IDX]: [F] [F] [F]
 TEXUV_RE = re.compile(
-    br'(\d+):\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')  # [IDX]: [F] [F]
+    fr'(\d+):\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})'.encode())  # [IDX]: [F] [F]
 SURFACE_RE = re.compile(
-    br'(\d+):\s+(\-?\d+)\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s+(\-?\d+)\s+(\-?\d+)\s+(\-?\d+)\s+(\-?\d+)\s+(-?\d*(\.\d+)?)\s+(\-?\d+)')
+    fr'(\d+):\s+(\-?\d+)\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s+(\-?\d+)\s+(\-?\d+)\s+(\-?\d+)\s+(\-?\d+)\s+({FLOAT_FRAGMENT})\s+(\-?\d+)'.encode())
 
 SECTOR_RE = re.compile(br'SECTOR\s+(\d+)')
 SECTOR_COLORMAP_RE = re.compile(br'COLORMAP\s+(\d+)')
 SECTOR_SURFACES_RE = re.compile(br'SURFACES\s+(\d+)\s+(\d+)')
-#SECTOR_EXTRALIGHT_RE = re.compile(br'EXTRA\s+LIGHT\s+(-?\d*(\.\d+)?)')
-#SECTOR_TINT_RE = re.compile(br'TINT\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
+#SECTOR_EXTRALIGHT_RE = re.compile(fr'EXTRA\s+LIGHT\s+({FLOAT_FRAGMENT})'.encode())
+#SECTOR_TINT_RE = re.compile(fr'TINT\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})'.encode())
 
 TEMPLATE_RE = re.compile(br'(\S+)\s+(\S+)\s+(\D.+)\Z')
 THING_RE = re.compile(
-    br'(\d+):\s+(\S+)\s+(\S+)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d+)\s*(.*)')
+    fr'(\d+):\s+(\S+)\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+(-?\d+)\s*(.*)'.encode())
 
 
 def _get_surface_rest_re(nverts):
-    text = br'\s+'
-    text += br'(-?\d+),\s*(-?\d+)\s+' * nverts
-    text += br'(-?\d*(\.\d+)?)\s+' * (nverts - 1)
-    text += br'(-?\d*(\.\d+)?)'  # no trailing whitespace
-    rest_re = re.compile(text)
+    text = r'\s+'
+    text += r'(-?\d+),\s*(-?\d+)\s+' * nverts
+    text += fr'({FLOAT_FRAGMENT})\s+' * (nverts - 1)
+    text += fr'({FLOAT_FRAGMENT})'  # no trailing whitespace
+    rest_re = re.compile(text.encode())
     return rest_re
 
 
