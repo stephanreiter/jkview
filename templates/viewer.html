@@ -66,6 +66,14 @@
             margin: 0;
         }
     </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@v0.124.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@v0.124.0/examples/jsm/"
+      }
+    }
+  </script>
 </head>
 
 <body>
@@ -84,10 +92,11 @@
     </div>
 
     <script src="{{ url_for('static', filename='js/progressbar.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/three.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/controls/OrbitControls.js') }}"></script>
 
-    <script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
         var isTouchDevice = (('ontouchstart' in window)
             || (navigator.MaxTouchPoints > 0)
             || (navigator.msMaxTouchPoints > 0));
@@ -326,7 +335,7 @@
             camera.up.set(0, 0, 1);
             scene.add(camera);
 
-            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls = new OrbitControls(camera, renderer.domElement);
             controls.enableKeys = false;
             controls.rotateSpeed = 0.25;
             controls.zoomSpeed = 0.5;
