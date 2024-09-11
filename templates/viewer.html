@@ -258,6 +258,16 @@
             document.addEventListener('dblclick', onDblClick, false);
         }
 
+        function debounce(callback, timeout) {
+            var timer;
+            return (...args) => {
+                window.clearTimeout(timer);
+                timer = window.setTimeout(() => {
+                    callback(...args);
+                }, timeout);
+            };
+        }
+
         function loadMaterials(matdata) {
             if (typeof matdata == 'undefined') {
                 console.error("Failed to retrieve materials!");
@@ -265,18 +275,17 @@
             }
 
             var loader = new THREE.TextureLoader();
+            var debouncedAnimate = debounce(animate, 100);
             for (var i = 0; i < matdata.length; ++i) {
                 if (matdata[i] != '') {
-                    var onLoaded = function (mats, idx, name) {
+                    var onLoaded = function (mats, idx) {
                         return function (tex) {
                             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
                             tex.colorSpace = THREE.SRGBColorSpace;
                             mats[idx] = new THREE.MeshBasicMaterial({ 'map': tex });
-                            // FOR DEVELOPMENT: allow material name queries
-                            // mats[idx].name = name;
-                            animate();
+                            debouncedAnimate();
                         };
-                    }(materialArray, i, matdata[i]['name']);
+                    }(materialArray, i);
                     loader.load(matdata[i]['data'], onLoaded);
                 }
             }
