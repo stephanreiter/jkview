@@ -1,4 +1,5 @@
-from flask import Flask, Response, render_template, request, send_from_directory
+from config import *
+from flask import Flask, Response, render_template, request, send_file, send_from_directory
 from flask_compress import Compress
 
 import base64
@@ -15,11 +16,10 @@ import zipfile
 import episode
 import gob
 import loader
+import render
 
 app = Flask(__name__)
 Compress(app)
-
-from config import *
 
 
 def _atomically_dump(f, target_path):
@@ -96,11 +96,11 @@ def _extract_level(zip_url):
             try:
                 episode_id = len(level_info['maps'])
 
-                surfaces, model_surfaces, materials = loader.load_level_from_gob(
+                surfaces, model_surfaces, sky_surfaces, materials, spawn_points = loader.load_level_from_gob(
                     levelname, gob_path)
 
                 # divide vertex UVs by texture sizes
-                for src in [surfaces, model_surfaces]:
+                for src in [surfaces, model_surfaces, sky_surfaces]:
                     for surf in src:
                         mat = materials[surf['material']]
                         if mat and 'dims' in mat:
@@ -132,8 +132,8 @@ def _extract_level(zip_url):
                 # assemble map data
                 material_colors = [_encode_color(
                     mat['color']) if mat else '#000000' for mat in materials]
-                map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces,
-                            'material_colors': material_colors}
+                map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces, 'sky_surfaces': sky_surfaces,
+                            'material_colors': material_colors, 'spawn_points': spawn_points}
                 _write_cache_atomically(zip_url, episode_id, 'map.json',
                                         'wt', json.dumps(map_data))
 
@@ -200,6 +200,7 @@ def _get_mapinfo(zip_url):
 def root_level_viewer():
     zip_url = _get_zip_url()
     episode_id = int(request.args.get('episode', 0))
+    spawn_point_idx = int(request.args.get('spawn', -1))
     level_info = _get_mapinfo(zip_url)
 
     censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
@@ -222,4 +223,31 @@ def root_level_viewer():
         maps.append([map, episode_url])
 
     return render_template('viewer.html', title=level_info['title'], maps=json.dumps(maps),
-                           map_js=mapjs_url, mat_js=matjs_url)
+                           map_js=mapjs_url, mat_js=matjs_url, spawn_point_idx=spawn_point_idx)
+
+
+@app.route('/level/preview.jpg')
+def root_level_preview():
+    zip_url = _get_zip_url()
+    episode_id = int(request.args.get('episode', 0))
+    spawn_point_idx = int(request.args.get('spawn', 0))
+    _get_mapinfo(zip_url)  # download if needed
+
+    censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
+
+    map_filename = _get_cache_filename(zip_url, episode_id, 'map.json')
+    matjs_filename = 'mat{0}.json'.format('' if censor else '-full')
+    mat_filename = _get_cache_filename(zip_url, episode_id, matjs_filename)
+
+    with open(map_filename, 'rt') as f:
+        map_json = json.loads(f.read())
+    with open(mat_filename, 'rt') as f:
+        mat_json = json.loads(f.read())
+    spawn_point = map_json['spawn_points'][spawn_point_idx]
+    image = render.render_level(
+        map_json['surfaces'] + map_json['model_surfaces'] + map_json['sky_surfaces'], mat_json, spawn_point)
+
+    output = io.BytesIO()
+    image.save(output, format='JPEG')
+    output.seek(0)
+    return send_file(output, download_name='preview.jpg', mimetype='image/jpeg')

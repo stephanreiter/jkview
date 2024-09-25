@@ -107,7 +107,7 @@ class JklFile:
                 key = int(match.group(1))
                 mat = int(match.group(2))
                 surfflags = int(match.group(3)[2:], 16)
-                faceflags = int(match.group(4)[2:], 16)
+                #faceflags = int(match.group(4)[2:], 16)
                 geo = int(match.group(5))
                 #light = int(match.group(6))
                 #tex = int(match.group(7))
@@ -215,10 +215,11 @@ class JklFile:
 
     def _read_things(self, lines, templates):
         models = []
+        spawn_points = []
         for line in lines:
             match = THING_RE.match(line)
             if match:
-                key = int(match.group(1))
+                #key = int(match.group(1))
                 template = match.group(2).lower()
                 name = match.group(3)
                 x = float(match.group(4))
@@ -238,7 +239,10 @@ class JklFile:
                     mdl = {'pos': (x, y, z), 'rot': (
                         pitch, yaw, roll), 'sector': sector, 'model': config[b'model3d']}
                     models.append(mdl)
+                if name == b'walkplayer':
+                    spawn_points.append({'pos': (x, y, z), 'rot': (pitch, yaw, roll)})
         self.models = models
+        self.spawn_points = spawn_points
 
 
 def _strip(line):
@@ -256,7 +260,7 @@ def _ends_section(line):
     return line == b'end' or _defines_section(line)
 
 
-def _parse_section(lines, f, section):
+def _parse_section(lines, f):
     for line in f:
         line = _strip(line)
         if not line:
@@ -274,7 +278,7 @@ def read_from_file(f):
             while _defines_section(line):
                 section = line[8:].strip().lower()
                 section_lines = []
-                line = _parse_section(section_lines, f, section)
+                line = _parse_section(section_lines, f)
                 sections[section] = section_lines
         return JklFile(sections)
 

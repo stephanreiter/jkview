@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>{{ title }} preview powered by The Massassi Temple</title>
+    <title>{{title}} preview powered by The Massassi Temple</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
@@ -223,8 +223,15 @@
                 }
             }
 
+            var spawnPoints = mapdata['spawn_points'];
+            var spawnPointIndex = parseInt('{{ spawn_point_idx | safe }}');
+            var spawnPointValid = (spawnPointIndex >= 0 && spawnPointIndex < spawnPoints.length);
+
             addSurfaces(mapdata['surfaces']);
             addSurfaces(mapdata['model_surfaces']);
+            if (spawnPointValid) {
+                addSurfaces(mapdata['sky_surfaces']);
+            }
 
             geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
@@ -238,12 +245,21 @@
 
             geometry.computeBoundingBox();
 
-            // position camera and configure controls            
-            var bb = geometry.boundingBox;
-            var center = new THREE.Vector3();
-            bb.getCenter(center);
-            camera.position.copy(bb.max);
-            controls.target.copy(center);
+            // position camera and configure controls
+            if (!spawnPointValid) {
+                var bb = geometry.boundingBox;
+                var center = new THREE.Vector3();
+                bb.getCenter(center);
+                camera.position.copy(bb.max);
+                controls.target.copy(center);
+            } else {
+                var pos = spawnPoints[spawnPointIndex]['pos'];
+                var rot = spawnPoints[spawnPointIndex]['rot'];
+                var angle = -rot[1] * Math.PI / 180.0;
+                var dir = [Math.sin(angle), Math.cos(angle), 0];
+                camera.position.copy(new THREE.Vector3(pos[0], pos[1], pos[2]));
+                controls.target.copy(new THREE.Vector3(pos[0] + dir[0], pos[1] + dir[1], pos[2] + dir[2]));
+            }
             controls.update();
 
             // create a mesh using the geometry
@@ -418,9 +434,6 @@
             if (intersects.length > 0) {
                 var first = intersects[0];
                 updateTarget(first.point);
-                // FOR DEVELOPMENT: determine material at intersected point
-                // var mat = geometry.faces[first.faceIndex].materialIndex;
-                // alert(materialArray[mat].name);
             }
         }
 
