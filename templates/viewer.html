@@ -2,7 +2,7 @@
 <html lang="en">
 
 <head>
-    <title>{{ title }} preview powered by The Massassi Temple</title>
+    <title>{{title}} preview powered by The Massassi Temple</title>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
@@ -34,14 +34,14 @@
             z-index: 2;
             color: #cccccc;
             visibility: hidden;
-            opacity: 1;
+            opacity: 0;
             transition: 1s opacity;
             cursor: default;
         }
 
         #mapinfo {
             position: absolute;
-            top: 0px;
+            bottom: 0px;
             right: 0px;
             width: 25%;
             padding: 10px;
@@ -65,6 +65,24 @@
             cursor: default;
             margin: 0;
         }
+
+        #spawninfo {
+            position: absolute;
+            bottom: 0px;
+            left: 0px;
+            width: 25%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: left;
+            z-index: 3;
+            color: #cccccc;
+            user-select: none;
+            visibility: hidden;
+        }
+
+        #spawninfo span {
+            cursor: pointer;
+        }
     </style>
     <script type="importmap">
     {
@@ -74,6 +92,8 @@
       }
     }
   </script>
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
 </head>
 
 <body>
@@ -82,13 +102,25 @@
         <b>{{title}}</b><br>
         Rotate: left drag. Move: right drag. Zoom: wheel (hold Alt to zoom fast). Re-anchor: double-click.
     </div>
+    <div id="mouseinfofps" class="info">
+        <b>{{title}}</b><br>
+        Look around: left drag. Move: wheel.
+    </div>
     <div id="touchinfo" class="info">
         <b>{{title}}</b><br>
         Rotate: drag. Move: two-finger drag. Zoom: pinch.
     </div>
+    <div id="touchinfofps" class="info">
+        <b>{{title}}</b><br>
+        Look around: drag.
+    </div>
     <div id="mapinfo">
-        <p>Maps:</p>
+        <p><b>Maps:</b></p>
         <ul id="mapinfolist"></ul>
+    </div>
+    <div id="spawninfo">
+        <span id="spawn" class="material-symbols-outlined" title="Jump into map">emoji_people</span>
+        <span id="showwholemap" class="material-symbols-outlined" title="Explore from high above">globe</span>
     </div>
 
     <script src="{{ url_for('static', filename='js/progressbar.min.js') }}"></script>
@@ -122,21 +154,51 @@
             }
         }
 
-        function showInfo() {
-            // show platform-specific info about controls
-            // and fade the info out after 5 seconds
-            var info = document.getElementById(isTouchDevice ? 'touchinfo' : 'mouseinfo');
-            info.style.visibility = "visible";
-            info.addEventListener('click', function () {
+        var camera, controls, fpsControls, scene, renderer, mesh, skyMesh, materialArray;
+        var spawnPoints, nextSpawnPoint = 0;
+        var fpsControlsScale = 0.0001;
+        var infos = ['touchinfo', 'touchinfofps', 'mouseinfo', 'mouseinfofps'];
+        var lastInfoFadeTimeout;
+
+        function showControlsInfo() {
+            // show platform-specific info about controls and fade out after 5 seconds
+            var selectedInfo = isTouchDevice ? 'touchinfo' : 'mouseinfo';
+            if (!controls.enabled) selectedInfo += 'fps';
+            for (var i = 0; i < infos.length; ++i) {
+                if (infos[i] == selectedInfo) continue;
+                var info = document.getElementById(infos[i]);
+                info.style.visibility = 'hidden';
                 info.style.opacity = '0';
-            }, false);
-            window.setTimeout(function () {
+            }
+            if (lastInfoFadeTimeout) {
+                window.clearTimeout(lastInfoFadeTimeout);
+            }
+
+            var info = document.getElementById(selectedInfo);
+            info.style.opacity = '100';
+            info.style.visibility = 'visible';
+            lastInfoFadeTimeout = window.setTimeout(function () {
                 info.style.opacity = '0';
             }, 5000);
+        }
+
+        function showInfo() {
+            showControlsInfo();
 
             if (maps.length > 1) {
-                var mapinfo = document.getElementById('mapinfo');
-                mapinfo.style.visibility = "visible";
+                document.getElementById('mapinfo').style.visibility = 'visible';
+            }
+
+            if (spawnPoints && spawnPoints.length > 0) {
+                document.getElementById('spawn').onclick = function () {
+                    spawn();
+                    showControlsInfo();
+                };
+                document.getElementById('showwholemap').onclick = function () {
+                    showWholeMap();
+                    showControlsInfo();
+                };
+                document.getElementById('spawninfo').style.visibility = 'visible';
             }
         }
 
@@ -162,7 +224,39 @@
             }
         }
 
-        var camera, controls, scene, renderer, geometry, mesh, materialArray;
+        function showWholeMap() {
+            fpsControls.enabled = false;
+            var bb = mesh.geometry.boundingBox;
+            var center = new THREE.Vector3();
+            bb.getCenter(center);
+            camera.position.copy(bb.max);
+            controls.target.copy(center);
+            controls.enabled = true;
+            controls.update();
+            scene.remove(skyMesh);
+            clearTarget();
+            animate();
+        }
+
+        function spawn() {
+            controls.enabled = false;
+            var spawnPoint = spawnPoints[nextSpawnPoint];
+            nextSpawnPoint = (nextSpawnPoint + 1) % spawnPoints.length;
+            var pos = spawnPoint['pos'];
+            var rot = spawnPoint['rot'];
+            var angle = -rot[1] * Math.PI / 180.0;
+            var dir = [Math.sin(angle) * fpsControlsScale, Math.cos(angle) * fpsControlsScale, 0];
+            var offsetZ = 1 / 16;
+            camera.position.copy(new THREE.Vector3(pos[0], pos[1], pos[2] + offsetZ));
+            fpsControls.target.copy(new THREE.Vector3(pos[0] + dir[0], pos[1] + dir[1], pos[2] + offsetZ + dir[2]));
+            fpsControls.enabled = true;
+            fpsControls.update();
+            if (!scene.getObjectByName('sky')) {
+                scene.add(skyMesh);
+            }
+            clearTarget();
+            animate();
+        }
 
         var progressDone = false;
         progress.setText("Loading ...");
@@ -186,13 +280,7 @@
                 return;
             }
 
-            progress.animate(1, function () {
-                progress.setText("Done!");
-                window.setTimeout(function () {
-                    progressDone = true;
-                    animate(); // rerender
-                }, 1000);
-            });
+            spawnPoints = mapdata['spawn_points'];
 
             materialArray = [];
             var materialColors = mapdata['material_colors'];
@@ -226,36 +314,50 @@
             addSurfaces(mapdata['surfaces']);
             addSurfaces(mapdata['model_surfaces']);
 
-            geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-            geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
-            var allIndices = [];
-            materialIndices.forEach((indices, material) => {
-                geometry.addGroup(allIndices.length, indices.length, material);
-                allIndices.push(...indices);
-            });
-            geometry.setIndex(allIndices);
-
-            geometry.computeBoundingBox();
-
-            // position camera and configure controls            
-            var bb = geometry.boundingBox;
-            var center = new THREE.Vector3();
-            bb.getCenter(center);
-            camera.position.copy(bb.max);
-            controls.target.copy(center);
-            controls.update();
+            function createGeometry() {
+                var geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+                geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+                var allIndices = [];
+                materialIndices.forEach((indices, material) => {
+                    geometry.addGroup(allIndices.length, indices.length, material);
+                    allIndices.push(...indices);
+                });
+                geometry.setIndex(allIndices);
+                geometry.computeBoundingBox();
+                return geometry;
+            }
 
             // create a mesh using the geometry
-            mesh = new THREE.Mesh(geometry, materialArray);
+            mesh = new THREE.Mesh(createGeometry(), materialArray);
             scene.add(mesh);
+
+            // reset and create a separate mesh for the sky
+            // don't add it yet - we want it only when in first-person mode
+            pos = []
+            uv = [];
+            materialIndices = new Map();
+            addSurfaces(mapdata['sky_surfaces']);
+            skyMesh = new THREE.Mesh(createGeometry(), materialArray);
+            skyMesh.name = 'sky';
+
+            showWholeMap();
 
             // render the first frame with the mesh
             animate();
 
             // enable user interaction now
             controls.addEventListener('change', animate);
+            fpsControls.addEventListener('change', animate);
             document.addEventListener('dblclick', onDblClick, false);
+
+            progress.animate(1, function () {
+                progress.setText("Done!");
+                window.setTimeout(function () {
+                    progressDone = true;
+                    animate(); // rerender
+                }, 400);
+            });
         }
 
         function debounce(callback, timeout) {
@@ -328,6 +430,12 @@
             controls.rotateSpeed = 0.25;
             controls.zoomSpeed = 0.5;
 
+            fpsControls = new OrbitControls(camera, renderer.domElement);
+            fpsControls.enableKeys = false;
+            fpsControls.rotateSpeed = 0.75;
+            fpsControls.enableZoom = false;
+            fpsControls.enabled = false;
+
             if (!isTouchDevice) {
                 // alt held speeds up zooming
                 window.addEventListener("keyup", function (ev) {
@@ -335,6 +443,16 @@
                 });
                 window.addEventListener("keydown", function (ev) {
                     if (ev.key == 'Alt') controls.zoomSpeed = 2;
+                });
+                // allow movement by scrolling the mouse up/down for fpsControls
+                window.addEventListener("wheel", function (ev) {
+                    if (!fpsControls.enabled) return;
+                    var zoomSpeed = 0.0025;
+                    const forward = new THREE.Vector3();
+                    camera.getWorldDirection(forward);
+                    camera.position.add(forward.clone().multiplyScalar(-ev.deltaY * zoomSpeed));
+                    fpsControls.target.copy(camera.position.clone().add(forward.clone().multiplyScalar(fpsControlsScale)));
+                    fpsControls.update();
                 });
             }
 
@@ -403,8 +521,13 @@
         }
 
         function updateTarget(pos) {
+            if (!controls.enabled) return;
             nextTarget = pos;
             doUpdateTarget();
+        }
+
+        function clearTarget() {
+            nextTarget = null;
         }
 
         function onDblClick(event) {
@@ -418,9 +541,6 @@
             if (intersects.length > 0) {
                 var first = intersects[0];
                 updateTarget(first.point);
-                // FOR DEVELOPMENT: determine material at intersected point
-                // var mat = geometry.faces[first.faceIndex].materialIndex;
-                // alert(materialArray[mat].name);
             }
         }
 

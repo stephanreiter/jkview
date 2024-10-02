@@ -22,14 +22,8 @@ def _make_material_from_frames(frames, make_lowres):
 
     # create an image
     with io.BytesIO() as output:
-        if True:  # ALWAYS SHOW THE FIRST FRAME len(frames) == 1:
-            mime = 'image/png'
-            frames[0].save(output, format='PNG')
-        else:
-            mime = 'image/gif'
-            frames[0].save(output, format='GIF',
-                           append_images=frames[1:], save_all=True, duration=1000)
-
+        mime = 'image/png'
+        frames[0].save(output, format='PNG')
         image = output.getvalue()
         dims = (frames[0].width, frames[0].height)
 
@@ -138,6 +132,7 @@ def _instantiate_model(model, pos, rot, texcache):
 def _load_level(jkl_name, gobs, official=[]):
     with gob.try_open_gob_files(gobs) as vfs:
         surfaces = []
+        sky_surfaces = []
 
         level = jkl.read_from_bytes(vfs.read(jkl_name))
 
@@ -160,32 +155,34 @@ def _load_level(jkl_name, gobs, official=[]):
             master_colormap_name = level.colormaps[0]
             master_colormap = cmp.read_from_bytes(
                 vfs.read(b'misc/cmp/' + master_colormap_name))
-            texcache.set_current_colormap(master_colormap_name, master_colormap)
+            texcache.set_current_colormap(
+                master_colormap_name, master_colormap)
         except:
             pass
 
         # load sectors
-        for k, sector in level.sectors.items():
+        for _, sector in level.sectors.items():
             for s in range(sector['surfaces'][0], sector['surfaces'][1]):
                 surface = level.surfaces[s]
                 if surface['geo'] != 4:
                     continue
-
-                if surface['surfflags'] & 0x200:
-                    continue  # horizon
-                if surface['surfflags'] & 0x400:
-                    continue  # ceiling
 
                 try:
                     material_name = level.materials[surface['material']]
                 except:
                     continue  # if there's no material, don't render the surface
 
-                surfaces.append({
+                surface_data = {
                     'vertices': surface['vertices'],
-                    'normal': surface['normal'],
                     'material': texcache.load(material_name)
-                })
+                }
+
+                if surface['surfflags'] & 0x200:
+                    sky_surfaces.append(surface_data)  # horizon
+                elif surface['surfflags'] & 0x400:
+                    sky_surfaces.append(surface_data)  # ceiling
+                else:
+                    surfaces.append(surface_data)
 
         # load models and instantiate them in the scene
         models = {}
@@ -203,7 +200,7 @@ def _load_level(jkl_name, gobs, official=[]):
             model_surfaces.extend(_instantiate_model(
                 models[filename], instance['pos'], instance['rot'], texcache))
 
-        return surfaces, model_surfaces, texcache.materials
+        return surfaces, model_surfaces, sky_surfaces, texcache.materials, level.spawn_points
 
 
 def load_level_from_gob(levelname, gob_path):
