@@ -33,6 +33,7 @@
             text-align: center;
             z-index: 2;
             color: #cccccc;
+            user-select: none;
             visibility: hidden;
             opacity: 0;
             transition: 1s opacity;
@@ -49,6 +50,7 @@
             text-align: right;
             z-index: 3;
             color: #cccccc;
+            user-select: none;
             visibility: hidden;
         }
 
@@ -83,6 +85,7 @@
         #spawninfo span {
             cursor: pointer;
         }
+        .material-symbols-outlined.md-32 { font-size: 32px; }
     </style>
     <script type="importmap">
     {
@@ -119,8 +122,8 @@
         <ul id="mapinfolist"></ul>
     </div>
     <div id="spawninfo">
-        <span id="spawn" class="material-symbols-outlined" title="Jump into map">emoji_people</span>
-        <span id="showwholemap" class="material-symbols-outlined" title="Explore from high above">globe</span>
+        <span id="spawn" class="material-symbols-outlined md-32" title="Jump into map">emoji_people</span>
+        <span id="showwholemap" class="material-symbols-outlined md-32" title="Explore from high above">globe</span>
     </div>
 
     <script src="{{ url_for('static', filename='js/progressbar.min.js') }}"></script>
@@ -432,7 +435,7 @@
 
             fpsControls = new OrbitControls(camera, renderer.domElement);
             fpsControls.enableKeys = false;
-            fpsControls.rotateSpeed = 0.75;
+            fpsControls.rotateSpeed = 0.5;
             fpsControls.enableZoom = false;
             fpsControls.enabled = false;
 
