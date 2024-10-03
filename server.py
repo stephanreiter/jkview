@@ -1,4 +1,5 @@
-from flask import Flask, Response, render_template, request, send_from_directory
+from config import *
+from flask import Flask, Response, render_template, request, send_file, send_from_directory
 from flask_compress import Compress
 
 import base64
@@ -18,8 +19,6 @@ import loader
 
 app = Flask(__name__)
 Compress(app)
-
-from config import *
 
 
 def _atomically_dump(f, target_path):
@@ -96,11 +95,11 @@ def _extract_level(zip_url):
             try:
                 episode_id = len(level_info['maps'])
 
-                surfaces, model_surfaces, materials = loader.load_level_from_gob(
+                surfaces, model_surfaces, sky_surfaces, materials, spawn_points = loader.load_level_from_gob(
                     levelname, gob_path)
 
                 # divide vertex UVs by texture sizes
-                for src in [surfaces, model_surfaces]:
+                for src in [surfaces, model_surfaces, sky_surfaces]:
                     for surf in src:
                         mat = materials[surf['material']]
                         if mat and 'dims' in mat:
@@ -132,8 +131,8 @@ def _extract_level(zip_url):
                 # assemble map data
                 material_colors = [_encode_color(
                     mat['color']) if mat else '#000000' for mat in materials]
-                map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces,
-                            'material_colors': material_colors}
+                map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces, 'sky_surfaces': sky_surfaces,
+                            'material_colors': material_colors, 'spawn_points': spawn_points}
                 _write_cache_atomically(zip_url, episode_id, 'map.json',
                                         'wt', json.dumps(map_data))
 
