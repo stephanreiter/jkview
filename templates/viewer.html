@@ -448,7 +448,7 @@
                     if (ev.key == 'Alt') controls.zoomSpeed = 2;
                 });
                 // allow movement by scrolling the mouse up/down for fpsControls
-                window.addEventListener("wheel", function (ev) {
+                renderer.domElement.addEventListener("wheel", function (ev) {
                     if (!fpsControls.enabled) return;
                     var zoomSpeed = 0.0025;
                     const forward = new THREE.Vector3();
@@ -456,6 +456,7 @@
                     camera.position.add(forward.clone().multiplyScalar(-ev.deltaY * zoomSpeed));
                     fpsControls.target.copy(camera.position.clone().add(forward.clone().multiplyScalar(fpsControlsScale)));
                     fpsControls.update();
+                    ev.preventDefault();
                 });
             }
 
