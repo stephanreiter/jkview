@@ -23,7 +23,7 @@ SECTOR_SURFACES_RE = re.compile(br'SURFACES\s+(\d+)\s+(\d+)')
 
 TEMPLATE_RE = re.compile(br'(\S+)\s+(\S+)\s+(\D.+)\Z')
 THING_RE = re.compile(
-    fr'(\d+):\s+(\S+)\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+(-?\d+)\s*(.*)'.encode())
+    fr'(\d+):\s+(\S+)\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+(-?\d+)(\s+-?\d+)?\s*(.*)'.encode())
 
 
 def _get_surface_rest_re(nverts):
@@ -193,8 +193,6 @@ class JklFile:
     def _read_config(self, text):
         config = {}
         for cfgpair in text.split():
-            if cfgpair == b'-1':
-                continue  # MotS
             k, v = cfgpair.split(b'=')
             config[k] = v
         return config
@@ -230,7 +228,7 @@ class JklFile:
                 roll = float(match.group(14))
                 sector = int(match.group(16))
                 config = self._read_config(
-                    match.group(17)) if match.group(17) else {}
+                    match.group(18)) if match.group(18) else {}
                 if template in templates:
                     # merge: overwrite values of template with new ones
                     config = {**templates[template], **config}
@@ -239,7 +237,7 @@ class JklFile:
                     mdl = {'pos': (x, y, z), 'rot': (
                         pitch, yaw, roll), 'sector': sector, 'model': config[b'model3d']}
                     models.append(mdl)
-                if name == b'walkplayer':
+                if b'type' in config and config[b'type'] == b'player':
                     spawn_points.append({'pos': (x, y, z), 'rot': (pitch, yaw, roll)})
         self.models = models
         self.spawn_points = spawn_points

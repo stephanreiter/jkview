@@ -11,7 +11,7 @@ CENSOR_ALWAYS = False
 ALWAYS_REGEN = False
 
 # increment VERSION to invalidate caches
-VERSION = 8
+VERSION = 9
 
 # allowed prefixes for level URLs
 ALLOWED_URL_PREFIXES = [
