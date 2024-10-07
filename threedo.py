@@ -129,8 +129,8 @@ class ThreedoFile:
                 x = float(match.group(2))
                 y = float(match.group(4))
                 z = float(match.group(6))
-                # i = float(match.group(8))
-                vdata[target][key] = (x, y, z)
+                i = float(match.group(8))
+                vdata[target][key] = (x, y, z, i)
             elif target == 'uv':
                 match = VERTEX_UV_RE.match(line)
                 key = int(match.group(1))
@@ -160,15 +160,16 @@ class ThreedoFile:
                 match = rest_re.match(rest)
 
                 vertices = []
-                diffuse = [extra_light, extra_light, extra_light]
                 for i in range(nverts):
                     xyzi_idx = int(match.group(2 * i + 1))
                     uv_idx = int(match.group(2 * i + 2))
 
                     xyzi = vdata['xyzi'][xyzi_idx]
+                    pos = xyzi[0:3]
                     norm = vdata['norm'][xyzi_idx]
                     uv = vdata['uv'][uv_idx] if geo == 4 else (0, 0)
-                    vertices.append([xyzi, uv, diffuse, norm])
+                    diffuse = [extra_light + xyzi[3]] * 3
+                    vertices.append([pos, uv, diffuse, norm])
 
                 curmesh[key] = {'vertices': vertices,
                                 'geo': geo, 'material': mat}

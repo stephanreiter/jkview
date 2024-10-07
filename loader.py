@@ -106,7 +106,7 @@ def _normalize_vector(v):
 def _apply_lighting(v, sector, lights):
     pos = v[0]
     n = _normalize_vector(v[3])
-    total = 0
+    total = sector.get('ambient_light', 0)
     for light in lights:
         lpos = (light['pos'][0] + light['offset'][0], light['pos'][1] +
                 light['offset'][1], light['pos'][2] + light['offset'][2])

@@ -21,6 +21,8 @@ SURFACE_RE = re.compile(
 SECTOR_RE = re.compile(br'SECTOR\s+(\d+)')
 SECTOR_COLORMAP_RE = re.compile(br'COLORMAP\s+(\d+)')
 SECTOR_SURFACES_RE = re.compile(br'SURFACES\s+(\d+)\s+(\d+)')
+SECTOR_AMBIENT_LIGHT_RE = re.compile(
+    fr'AMBIENT\s+LIGHT\s+({FLOAT_FRAGMENT2})'.encode())
 SECTOR_EXTRA_LIGHT_RE = re.compile(
     fr'EXTRA\s+LIGHT\s+({FLOAT_FRAGMENT2})'.encode())
 
@@ -224,6 +226,11 @@ class JklFile:
             if match:
                 first = int(match.group(1))
                 cur['surfaces'] = (first, first + int(match.group(2)))
+                continue
+
+            match = SECTOR_AMBIENT_LIGHT_RE.match(line)
+            if match:
+                cur['ambient_light'] = float(match.group(1))
                 continue
 
             match = SECTOR_EXTRA_LIGHT_RE.match(line)
