@@ -6,6 +6,9 @@ ITEM_RE = re.compile(br'(\d+):')  # [IDX]: ...
 CMP_RE = re.compile(br'(\d+):\s+(\S+)')  # [IDX]: [FILENAME]
 # [IDX]: [FILENAME] 1 1
 FLOAT_FRAGMENT = r'-?\d*(\.\d+)?(?:[eE][-+]?\d+)?'
+FLOAT_FRAGMENT2 = r'-?\d*(?:\.\d+)?(?:[eE][-+]?\d+)?'
+VECTOR_RE = re.compile(
+    fr'\(({FLOAT_FRAGMENT2})/({FLOAT_FRAGMENT2})/({FLOAT_FRAGMENT2})\)'.encode())
 MATERIAL_RE = re.compile(
     fr'(\d+):\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})'.encode())
 POSXYZ_RE = re.compile(
@@ -18,19 +21,21 @@ SURFACE_RE = re.compile(
 SECTOR_RE = re.compile(br'SECTOR\s+(\d+)')
 SECTOR_COLORMAP_RE = re.compile(br'COLORMAP\s+(\d+)')
 SECTOR_SURFACES_RE = re.compile(br'SURFACES\s+(\d+)\s+(\d+)')
-#SECTOR_EXTRALIGHT_RE = re.compile(fr'EXTRA\s+LIGHT\s+({FLOAT_FRAGMENT})'.encode())
-#SECTOR_TINT_RE = re.compile(fr'TINT\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})'.encode())
+SECTOR_EXTRA_LIGHT_RE = re.compile(
+    fr'EXTRA\s+LIGHT\s+({FLOAT_FRAGMENT2})'.encode())
 
 TEMPLATE_RE = re.compile(br'(\S+)\s+(\S+)\s+(\D.+)\Z')
 THING_RE = re.compile(
     fr'(\d+):\s+(\S+)\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+(-?\d+)(\s+-?\d+)?\s*(.*)'.encode())
 
 
-def _get_surface_rest_re(nverts):
+def _get_surface_rest_re(nverts, mots):
     text = r'\s+'
     text += r'(-?\d+),\s*(-?\d+)\s+' * nverts
-    text += fr'({FLOAT_FRAGMENT})\s+' * (nverts - 1)
-    text += fr'({FLOAT_FRAGMENT})'  # no trailing whitespace
+    if mots:
+        text += fr'({FLOAT_FRAGMENT2})\s+' * nverts * 3
+    text += fr'({FLOAT_FRAGMENT2})\s+' * (nverts - 1)
+    text += fr'({FLOAT_FRAGMENT2})'  # no trailing whitespace
     rest_re = re.compile(text.encode())
     return rest_re
 
@@ -47,6 +52,27 @@ def _parse_subsections(lines):
                 name = match.group(1).strip().lower()
                 ss[name] = cur = []
     return ss
+
+
+def _get_light_config(config):
+    if b'thingflags' not in config:
+        return None
+    if int(config[b'thingflags'][2:], 16) & 0x1 == 0:  # does not emit light
+        return None
+
+    light = float(config.get(b'light', b'0.0'))
+    if light <= 0:
+        return None
+
+    match = VECTOR_RE.match(config.get(b'lightoffset', b''))
+    if match:
+        offset = (float(match.group(1)), float(
+            match.group(2)), float(match.group(3)))
+    else:
+        offset = (0, 0, 0)
+    intensity = float(config.get(b'lightintensity', b'1.0'))
+
+    return {'light': light, 'intensity': intensity, 'offset': offset}
 
 
 class JklFile:
@@ -101,37 +127,57 @@ class JklFile:
             uvs[key] = (u, v)
 
         surfaces = {}
+        mots = True
         for line in ss[b'world surfaces']:
             match = SURFACE_RE.match(line)
             if match:
                 key = int(match.group(1))
                 mat = int(match.group(2))
                 surfflags = int(match.group(3)[2:], 16)
-                #faceflags = int(match.group(4)[2:], 16)
+                # faceflags = int(match.group(4)[2:], 16)
                 geo = int(match.group(5))
-                #light = int(match.group(6))
-                #tex = int(match.group(7))
-                #adjoin = int(match.group(8))
+                light = int(match.group(6))
+                # tex = int(match.group(7))
+                # adjoin = int(match.group(8))
                 extra_light = float(match.group(9))
                 nverts = int(match.group(11))
 
-                rest_re = _get_surface_rest_re(nverts)
                 rest = line[match.end(11):]
-                match = rest_re.match(rest)
 
                 uv_scale = 0.5 if (surfflags & 0x10) else 1
                 uv_scale *= 2 if (surfflags & 0x20) else 1
                 uv_scale *= 8 if (surfflags & 0x40) else 1
+                ignore_lighting = (light == 1)
+
+                rest_re = _get_surface_rest_re(nverts, mots)
+                match = rest_re.match(rest)
+                if not match and mots:
+                    mots = False
+                    rest_re = _get_surface_rest_re(nverts, mots)
+                    match = rest_re.match(rest)
 
                 vertices = []
                 for i in range(nverts):
                     xyz_idx = int(match.group(2 * i + 1))
                     uv_idx = int(match.group(2 * i + 2))
-                    intensity = float(match.group(2 * nverts + i * 2 + 1))
 
                     uv = (0.0, 0.0) if uv_idx == -1 \
                         else (uvs[uv_idx][0] * uv_scale, uvs[uv_idx][1] * uv_scale)
-                    diffuse = min(intensity, 1.0) + extra_light
+                    if ignore_lighting:
+                        diffuse = (1.0, 1.0, 1.0)
+                    elif mots:
+                        # TODO? l = float(match.group(2 * nverts + 4 * i + 1))
+                        r = float(match.group(2 * nverts + 4 * i + 2))
+                        g = float(match.group(2 * nverts + 4 * i + 3))
+                        b = float(match.group(2 * nverts + 4 * i + 4))
+                        r = min(1, r + extra_light)
+                        g = min(1, g + extra_light)
+                        b = min(1, b + extra_light)
+                        diffuse = (r, g, b)
+                    else:
+                        l = float(match.group(2 * nverts + i + 1))
+                        l = min(1, l + extra_light)
+                        diffuse = (l, l, l)
                     vertices.append([xyzs[xyz_idx], uv, diffuse])
 
                 surfaces[key] = {
@@ -167,26 +213,23 @@ class JklFile:
             if match:
                 key = int(match.group(1))
                 sectors[key] = cur = {}
+                continue
 
             match = SECTOR_COLORMAP_RE.match(line)
             if match:
                 cur['colormap'] = int(match.group(1))
+                continue
 
             match = SECTOR_SURFACES_RE.match(line)
             if match:
                 first = int(match.group(1))
                 cur['surfaces'] = (first, first + int(match.group(2)))
+                continue
 
-            #match = SECTOR_EXTRALIGHT_RE.match(line)
-            #if match:
-            #    cur['extra_light'] = float(match.group(1))
-
-            #match = SECTOR_TINT_RE.match(line)
-            #if match:
-            #    b = float(match.group(1))
-            #    g = float(match.group(3))
-            #    r = float(match.group(5))
-            #    cur['tint'] = (r, g, b)
+            match = SECTOR_EXTRA_LIGHT_RE.match(line)
+            if match:
+                cur['extra_light'] = float(match.group(1))
+                continue
 
         self.sectors = sectors
 
@@ -212,14 +255,15 @@ class JklFile:
         return tmpls
 
     def _read_things(self, lines, templates):
+        lights = []
         models = []
         spawn_points = []
         for line in lines:
             match = THING_RE.match(line)
             if match:
-                #key = int(match.group(1))
+                # key = int(match.group(1))
                 template = match.group(2).lower()
-                name = match.group(3)
+                # name = match.group(3)
                 x = float(match.group(4))
                 y = float(match.group(6))
                 z = float(match.group(8))
@@ -238,7 +282,14 @@ class JklFile:
                         pitch, yaw, roll), 'sector': sector, 'model': config[b'model3d']}
                     models.append(mdl)
                 if b'type' in config and config[b'type'] == b'player':
-                    spawn_points.append({'pos': (x, y, z), 'rot': (pitch, yaw, roll)})
+                    spawn_points.append(
+                        {'pos': (x, y, z), 'rot': (pitch, yaw, roll)})
+                light = _get_light_config(config)
+                if light:
+                    light['pos'] = (x, y, z)
+                    lights.append(light)
+
+        self.lights = lights
         self.models = models
         self.spawn_points = spawn_points
 
@@ -270,15 +321,15 @@ def _parse_section(lines, f):
 
 
 def read_from_file(f):
-        sections = {}
-        for line in f:
-            line = _strip(line)
-            while _defines_section(line):
-                section = line[8:].strip().lower()
-                section_lines = []
-                line = _parse_section(section_lines, f)
-                sections[section] = section_lines
-        return JklFile(sections)
+    sections = {}
+    for line in f:
+        line = _strip(line)
+        while _defines_section(line):
+            section = line[8:].strip().lower()
+            section_lines = []
+            line = _parse_section(section_lines, f)
+            sections[section] = section_lines
+    return JklFile(sections)
 
 
 def read_from_bytes(b):

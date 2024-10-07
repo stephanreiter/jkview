@@ -46,13 +46,13 @@ class ThreedoFile:
             match = NODE_RE.match(line)
             if match:
                 key = int(match.group(1))
-                flags = int(match.group(2)[2:], 16)
-                ntype = int(match.group(3)[2:], 16)
+                # flags = int(match.group(2)[2:], 16)
+                # ntype = int(match.group(3)[2:], 16)
                 mesh = int(match.group(4))
                 parent = int(match.group(5))
-                child = int(match.group(6))
-                sibling = int(match.group(7))
-                num_children = int(match.group(8))
+                # child = int(match.group(6))
+                # sibling = int(match.group(7))
+                # num_children = int(match.group(8))
                 x = float(match.group(9))
                 y = float(match.group(11))
                 z = float(match.group(13))
@@ -62,7 +62,7 @@ class ThreedoFile:
                 pivot_x = float(match.group(21))
                 pivot_y = float(match.group(23))
                 pivot_z = float(match.group(25))
-                name = match.group(27)
+                # name = match.group(27)
 
                 nodes[key] = {
                     'mesh': mesh,
@@ -75,7 +75,7 @@ class ThreedoFile:
 
         # build hierarchy and find root
         root_node = None
-        for k, n in nodes.items():
+        for _, n in nodes.items():
             p = n['parent']
             if p >= 0:
                 nodes[p]['children'].append(n)
@@ -105,7 +105,6 @@ class ThreedoFile:
             elif sline.startswith(b'VERTEX NORMALS'):
                 target = 'norm'
                 continue
-
             elif sline.startswith(b'FACES'):
                 target = 'faces'
                 continue
@@ -115,7 +114,7 @@ class ThreedoFile:
 
             match = INTEGER_VALUE_RE.match(line)
             if match:
-                vtarget = ''
+                target = ''
                 name = match.group(1)
                 value = int(match.group(2))
                 if name == b'GEOSET':
@@ -130,8 +129,8 @@ class ThreedoFile:
                 x = float(match.group(2))
                 y = float(match.group(4))
                 z = float(match.group(6))
-                i = float(match.group(8))
-                vdata[target][key] = (x, y, z, i)
+                # i = float(match.group(8))
+                vdata[target][key] = (x, y, z)
             elif target == 'uv':
                 match = VERTEX_UV_RE.match(line)
                 key = int(match.group(1))
@@ -149,10 +148,10 @@ class ThreedoFile:
                 match = FACE_RE.match(line)
                 key = int(match.group(1))
                 mat = int(match.group(2))
-                #ftype = int(match.group(3)[2:], 16)
+                # ftype = int(match.group(3)[2:], 16)
                 geo = int(match.group(4))
-                #light = int(match.group(5))
-                #tex = int(match.group(6))
+                # light = int(match.group(5))
+                # tex = int(match.group(6))
                 extra_light = float(match.group(7))
                 nverts = int(match.group(9))
 
@@ -161,30 +160,18 @@ class ThreedoFile:
                 match = rest_re.match(rest)
 
                 vertices = []
+                diffuse = [extra_light, extra_light, extra_light]
                 for i in range(nverts):
                     xyzi_idx = int(match.group(2 * i + 1))
                     uv_idx = int(match.group(2 * i + 2))
 
                     xyzi = vdata['xyzi'][xyzi_idx]
-                    uv = vdata['uv'][uv_idx] if geo == 4 else (0, 0)
                     norm = vdata['norm'][xyzi_idx]
-                    diffuse = min(xyzi[3], 1.0) + extra_light
-                    vertices.append(
-                        [(xyzi[0], xyzi[1], xyzi[2]), uv, norm, diffuse])
+                    uv = vdata['uv'][uv_idx] if geo == 4 else (0, 0)
+                    vertices.append([xyzi, uv, diffuse, norm])
 
                 curmesh[key] = {'vertices': vertices,
                                 'geo': geo, 'material': mat}
-
-            #elif target == 'fnorm':
-            #    match = NORMAL_RE.match(line)
-            #    if match:
-            #        key = int(match.group(1))
-            #        x = float(match.group(2))
-            #        y = float(match.group(4))
-            #        z = float(match.group(6))
-            #        curmesh[key]['normal'] = (x, y, z)
-            #    else:
-            #        target = ''  # last, leave mode
 
         # keep only the highest resolution (geoset 0)
         self.meshes = geosets[0]
@@ -217,15 +204,15 @@ def _parse_section(lines, f, section):
 
 
 def read_from_file(f):
-        sections = {}
-        for line in f:
-            line = _strip(line)
-            while _defines_section(line):
-                section = line[8:].strip().lower()
-                section_lines = []
-                line = _parse_section(section_lines, f, section)
-                sections[section] = section_lines
-        return ThreedoFile(sections)
+    sections = {}
+    for line in f:
+        line = _strip(line)
+        while _defines_section(line):
+            section = line[8:].strip().lower()
+            section_lines = []
+            line = _parse_section(section_lines, f, section)
+            sections[section] = section_lines
+    return ThreedoFile(sections)
 
 
 def read_from_bytes(b):

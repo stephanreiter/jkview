@@ -1,4 +1,3 @@
-import json
 import math
 import transformations as tf
 import io
@@ -74,12 +73,9 @@ class MaterialCache:
 
 
 def _transform_vector(m, v, w):
-    r = 0
-    x = m[r][0] * v[0] + m[r][1] * v[1] + m[r][2] * v[2] + m[r][3] * w
-    r = 1
-    y = m[r][0] * v[0] + m[r][1] * v[1] + m[r][2] * v[2] + m[r][3] * w
-    r = 2
-    z = m[r][0] * v[0] + m[r][1] * v[1] + m[r][2] * v[2] + m[r][3] * w
+    x = m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2] + m[0][3] * w
+    y = m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2] + m[1][3] * w
+    z = m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2] + m[2][3] * w
     return (float(x), float(y), float(z))
 
 
@@ -87,9 +83,44 @@ def _transform_vertices(transform, vertices):
     ret = []
     for v in vertices:
         pos = _transform_vector(transform, v[0], 1.0)
-        norm = _transform_vector(transform, v[2], 0.0)
-        ret.append([pos, v[1], norm, v[3]])
+        norm = _transform_vector(transform, v[3], 0.0)
+        ret.append([pos, v[1], v[2], norm])
     return ret
+
+
+def _add_light(v, l):
+    return [
+        v[0],
+        v[1],
+        (min(1, v[2][0] + l), min(1, v[2][1] + l), min(1, v[2][2] + l))
+    ]
+
+
+def _normalize_vector(v):
+    length = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    if length == 0: return v
+    il = 1.0 / length
+    return (v[0] * il, v[1] * il, v[2] * il)
+
+
+def _apply_lighting(v, sector, lights):
+    pos = v[0]
+    n = _normalize_vector(v[3])
+    total = 0
+    for light in lights:
+        lpos = (light['pos'][0] + light['offset'][0], light['pos'][1] +
+                light['offset'][1], light['pos'][2] + light['offset'][2])
+        l = (lpos[0] - pos[0], lpos[1] - pos[1], lpos[2] - pos[2])
+        distance = math.sqrt(l[0] * l[0] + l[1] * l[1] + l[2] * l[2])
+        # range from https://forums.massassi.net/Editing_Forums/Jedi_Knight_and_Mysteries_of_the_Sith_Editing_Forum/thread_30544_page_1.html
+        range = light['intensity'] * 1.25 * 2
+        if distance >= range:
+            continue
+        ndotl = (n[0] * l[0] + n[1] * l[1] + n[2]
+                 * l[2]) / distance  # normalize l
+        if ndotl > 0:
+            total += ndotl * (1 - distance / range) * light['light']
+    return _add_light(v, total + sector.get('extra_light', 0))
 
 
 def _rotation_matrix(rot):
@@ -97,7 +128,7 @@ def _rotation_matrix(rot):
     return tf.euler_matrix(rot[2], rot[1], rot[0], 'ryzx')
 
 
-def _instantiate_node(surfaces, model, node, transform, texcache):
+def _instantiate_node(surfaces, model, node, transform, sector, lights, texcache):
     rot = node['rot']
     transform = tf.concatenate_matrices(
         transform, tf.translation_matrix(node['offset']), _rotation_matrix(rot))
@@ -106,26 +137,29 @@ def _instantiate_node(surfaces, model, node, transform, texcache):
         mesh_transform = tf.concatenate_matrices(
             transform, tf.translation_matrix(node['pivot']))
         mesh = model.meshes[node['mesh']]
-        for k, surface in mesh.items():
+        for _, surface in mesh.items():
             try:
                 material_name = model.materials[surface['material']]
             except:
                 continue  # if there's no material, don't render the surface
 
+            vertices = _transform_vertices(mesh_transform, surface['vertices'])
             surfaces.append({
-                'vertices': _transform_vertices(mesh_transform, surface['vertices']),
+                'vertices': [_apply_lighting(v, sector, lights) for v in vertices],
                 'material': texcache.load(material_name)
             })
 
     for child in node['children']:
-        _instantiate_node(surfaces, model, child, transform, texcache)
+        _instantiate_node(surfaces, model, child, transform,
+                          sector, lights, texcache)
 
 
-def _instantiate_model(model, pos, rot, texcache):
+def _instantiate_model(model, pos, rot, sector, lights, texcache):
     surfaces = []
     transform = tf.concatenate_matrices(tf.translation_matrix(
         pos), _rotation_matrix(rot))
-    _instantiate_node(surfaces, model, model.root_node, transform, texcache)
+    _instantiate_node(surfaces, model, model.root_node,
+                      transform, sector, lights, texcache)
     return surfaces
 
 
@@ -173,14 +207,12 @@ def _load_level(jkl_name, gobs, official=[]):
                     continue  # if there's no material, don't render the surface
 
                 surface_data = {
-                    'vertices': surface['vertices'],
+                    'vertices': [_add_light(v, sector.get('extra_light', 0)) for v in surface['vertices']],
                     'material': texcache.load(material_name)
                 }
 
-                if surface['surfflags'] & 0x200:
+                if surface['surfflags'] & 0x600:  # horizon or ceiling
                     sky_surfaces.append(surface_data)  # horizon
-                elif surface['surfflags'] & 0x400:
-                    sky_surfaces.append(surface_data)  # ceiling
                 else:
                     surfaces.append(surface_data)
 
@@ -197,8 +229,10 @@ def _load_level(jkl_name, gobs, official=[]):
                 except:
                     continue  # model not found
 
-            model_surfaces.extend(_instantiate_model(
-                models[filename], instance['pos'], instance['rot'], texcache))
+            sector = level.sectors[instance['sector']]
+            model = _instantiate_model(
+                models[filename], instance['pos'], instance['rot'], sector, level.lights, texcache)
+            model_surfaces.extend(model)
 
         return surfaces, model_surfaces, sky_surfaces, texcache.materials, level.spawn_points
 
