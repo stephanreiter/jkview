@@ -85,7 +85,10 @@
         #spawninfo span {
             cursor: pointer;
         }
-        .material-symbols-outlined.md-32 { font-size: 32px; }
+
+        .material-symbols-outlined.md-32 {
+            font-size: 32px;
+        }
     </style>
     <script type="importmap">
     {
@@ -94,7 +97,34 @@
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@v0.168.0/examples/jsm/"
       }
     }
-  </script>
+    </script>
+    <script type="x-shader/x-vertex" id="skyvs">
+    varying vec4 vPos;
+
+    void main() {
+        vPos = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        gl_Position = vPos;
+    }
+    </script>
+    <script type="x-shader/x-fragment" id="skyfs">
+    uniform sampler2D u_texture;
+    uniform mat4 u_inverseProjectionViewMatrix;
+    varying vec4 vPos;
+
+    void main() {
+        vec4 pos = u_inverseProjectionViewMatrix * vPos;
+        vec3 d = pos.xyz - cameraPosition;
+        // triplanar mapping of a flattenen ball
+        d.z *= 4.0;
+        vec3 uvw = normalize(d);
+        vec3 auvw = abs(uvw);
+        vec3 s = auvw / (auvw.x + auvw.y + auvw.z);
+        vec4 a = texture2D(u_texture, uvw.xy);
+        vec4 b = texture2D(u_texture, uvw.yz);
+        vec4 c = texture2D(u_texture, uvw.zx);
+        gl_FragColor = a * s.z + b * s.x + c * s.y;
+    }
+    </script>
     <link rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
 </head>
@@ -157,11 +187,12 @@
             }
         }
 
-        var camera, controls, fpsControls, scene, renderer, mesh, skyMesh, materialArray;
+        var camera, controls, fpsControls, scene, renderer, mesh, skyMesh, materialArray, skyMaterialsMap;
         var spawnPoints, nextSpawnPoint = 0;
         var fpsControlsScale = 0.0001;
         var infos = ['touchinfo', 'touchinfofps', 'mouseinfo', 'mouseinfofps'];
         var lastInfoFadeTimeout;
+        var inverseProjectionViewMatrix = new THREE.Matrix4();
 
         function showControlsInfo() {
             // show platform-specific info about controls and fade out after 5 seconds
@@ -290,19 +321,20 @@
             for (var i = 0; i < materialColors.length; ++i) {
                 materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[i], vertexColors: true }));
             }
+            skyMaterialsMap = new Map();
 
             var pos = []
             var uv = [];
             var diffuse = [];
             var materialIndices = new Map();
-            var addSurfaces = function (surfaces, skipDiffuse = false) {
+            var addSurfaces = function (surfaces, isSky = false) {
                 for (var i = 0; i < surfaces.length; ++i) {
                     var verts = surfaces[i]['vertices'];
                     var v0 = pos.length / 3;
                     for (var v = 0; v < verts.length; ++v) {
                         pos.push(...verts[v][0]);
                         uv.push(...verts[v][1]);
-                        if (skipDiffuse) {
+                        if (isSky) {
                             diffuse.push(1, 1, 1);
                         } else {
                             diffuse.push(...verts[v][2]);
@@ -310,6 +342,14 @@
                     }
 
                     var material = surfaces[i]['material'];
+                    if (isSky) {
+                        if (!skyMaterialsMap.has(material)) {
+                            var remapped = materialArray.length;
+                            materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[material] }));
+                            skyMaterialsMap.set(material, remapped)
+                        }
+                        material = skyMaterialsMap.get(material);
+                    }
                     if (!materialIndices.has(material)) {
                         materialIndices.set(material, []);
                     }
@@ -389,16 +429,31 @@
 
             var loader = new THREE.TextureLoader();
             var debouncedAnimate = debounce(animate, 100);
+            var skyVertexShader = document.getElementById('skyvs').textContent;
+            var skyFragmentShader = document.getElementById('skyfs').textContent;
             for (var i = 0; i < matdata.length; ++i) {
                 if (matdata[i] != '') {
-                    var onLoaded = function (mats, idx) {
+                    var onLoaded = function (mats, skyMatsMap, idx) {
                         return function (tex) {
                             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
                             tex.colorSpace = THREE.SRGBColorSpace;
                             mats[idx] = new THREE.MeshBasicMaterial({ 'map': tex, vertexColors: true });
+
+                            if (skyMatsMap.has(idx)) {
+                                var remapped = skyMatsMap.get(idx);
+                                mats[remapped] = new THREE.ShaderMaterial({
+                                    vertexShader: skyVertexShader,
+                                    fragmentShader: skyFragmentShader,
+                                    uniforms: {
+                                        u_texture: { type: 't', value: tex },
+                                        u_inverseProjectionViewMatrix: { value: inverseProjectionViewMatrix }
+                                    },
+                                });
+                            }
+
                             debouncedAnimate();
                         };
-                    }(materialArray, i);
+                    }(materialArray, skyMaterialsMap, i);
                     loader.load(matdata[i]['data'], onLoaded);
                 }
             }
@@ -566,6 +621,9 @@
                 hideProgress();
                 showInfo();
             }
+            inverseProjectionViewMatrix.copy(camera.projectionMatrix);
+            inverseProjectionViewMatrix.multiply(camera.matrixWorldInverse);
+            inverseProjectionViewMatrix.invert();
             renderer.render(scene, camera);
         }
     </script>
