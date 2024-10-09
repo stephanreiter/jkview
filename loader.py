@@ -98,7 +98,8 @@ def _add_light(v, l):
 
 def _normalize_vector(v):
     length = math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
-    if length == 0: return v
+    if length == 0:
+        return v
     il = 1.0 / length
     return (v[0] * il, v[1] * il, v[2] * il)
 
@@ -158,8 +159,9 @@ def _instantiate_model(model, pos, rot, sector, lights, texcache):
     surfaces = []
     transform = tf.concatenate_matrices(tf.translation_matrix(
         pos), _rotation_matrix(rot))
-    _instantiate_node(surfaces, model, model.root_node,
-                      transform, sector, lights, texcache)
+    for root_node in model.root_nodes:
+        _instantiate_node(surfaces, model, root_node,
+                          transform, sector, lights, texcache)
     return surfaces
 
 
@@ -239,4 +241,7 @@ def _load_level(jkl_name, gobs, official=[]):
 
 def load_level_from_gob(levelname, gob_path):
     OFFICIAL = ['Res1hi.gob', 'Res2.gob', 'JKMRES.GOO']
-    return _load_level(b'jkl/' + levelname, gobs=[gob_path] + OFFICIAL, official=OFFICIAL)
+    # Order matters: let level specific gobs override official resources.
+    # This is relevant, for example, for the Blue Rain level (375): it has its own 3do/tree.3do.
+    gobs = OFFICIAL + [gob_path]
+    return _load_level(b'jkl/' + levelname, gobs=gobs, official=OFFICIAL)
