@@ -74,19 +74,19 @@ class ThreedoFile:
                 }
 
         # build hierarchy and find root
-        root_node = None
+        root_nodes = []
         for _, n in nodes.items():
             p = n['parent']
             if p >= 0:
                 nodes[p]['children'].append(n)
             else:
-                root_node = n
+                root_nodes.append(n)
             del n['parent']  # no longer need this bit
 
-        if not root_node:
-            raise Exception("No root node!")
+        if not root_nodes:
+            raise Exception("No root nodes!")
 
-        self.root_node = root_node
+        self.root_nodes = root_nodes
 
     def _read_geometry(self, lines):
         geosets = {}
