@@ -147,7 +147,8 @@ def _instantiate_node(surfaces, model, node, transform, sector, lights, texcache
             vertices = _transform_vertices(mesh_transform, surface['vertices'])
             surfaces.append({
                 'vertices': [_apply_lighting(v, sector, lights) for v in vertices],
-                'material': texcache.load(material_name)
+                'material': texcache.load(material_name),
+                'translucent': surface['translucent']
             })
 
     for child in node['children']:
@@ -210,7 +211,8 @@ def _load_level(jkl_name, gobs, official=[]):
 
                 surface_data = {
                     'vertices': [_add_light(v, sector.get('extra_light', 0)) for v in surface['vertices']],
-                    'material': texcache.load(material_name)
+                    'material': texcache.load(material_name),
+                    'translucent': surface['translucent']
                 }
 
                 if surface['surfflags'] & 0x600:  # horizon or ceiling

@@ -187,7 +187,8 @@
             }
         }
 
-        var camera, controls, fpsControls, scene, renderer, mesh, skyMesh, materialArray, skyMaterialsMap;
+        var camera, controls, fpsControls, scene, renderer, mesh, skyMesh, materialArray;
+        var skyMaterialsMap, translucentMaterialsMap;
         var spawnPoints, nextSpawnPoint = 0;
         var fpsControlsScale = 0.0001;
         var infos = ['touchinfo', 'touchinfofps', 'mouseinfo', 'mouseinfofps'];
@@ -322,6 +323,7 @@
                 materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[i], vertexColors: true }));
             }
             skyMaterialsMap = new Map();
+            translucentMaterialsMap = new Map();
 
             var pos = []
             var uv = [];
@@ -350,6 +352,15 @@
                         }
                         material = skyMaterialsMap.get(material);
                     }
+                    else if (surfaces[i]['translucent']) {
+                        if (!translucentMaterialsMap.has(material)) {
+                            var remapped = materialArray.length;
+                            materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[material] }));
+                            translucentMaterialsMap.set(material, remapped)
+                        }
+                        material = translucentMaterialsMap.get(material);
+                    }
+
                     if (!materialIndices.has(material)) {
                         materialIndices.set(material, []);
                     }
@@ -433,11 +444,15 @@
             var skyFragmentShader = document.getElementById('skyfs').textContent;
             for (var i = 0; i < matdata.length; ++i) {
                 if (matdata[i] != '') {
-                    var onLoaded = function (mats, skyMatsMap, idx) {
+                    var onLoaded = function (mats, skyMatsMap, translucentMatsMap, idx) {
                         return function (tex) {
                             tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
                             tex.colorSpace = THREE.SRGBColorSpace;
-                            mats[idx] = new THREE.MeshBasicMaterial({ 'map': tex, vertexColors: true });
+                            mats[idx] = new THREE.MeshBasicMaterial({
+                                map: tex,
+                                alphaTest: 1.0 / 255.0,
+                                vertexColors: true
+                            });
 
                             if (skyMatsMap.has(idx)) {
                                 var remapped = skyMatsMap.get(idx);
@@ -450,10 +465,20 @@
                                     },
                                 });
                             }
+                            if (translucentMatsMap.has(idx)) {
+                                var remapped = translucentMatsMap.get(idx);
+                                mats[remapped] = new THREE.MeshBasicMaterial({
+                                    map: tex,
+                                    alphaTest: 1.0 / 255.0,
+                                    vertexColors: true,
+                                    transparent: true,
+                                    opacity: 90.0 / 255.0
+                                });
+                            }
 
                             debouncedAnimate();
                         };
-                    }(materialArray, skyMaterialsMap, i);
+                    }(materialArray, skyMaterialsMap, translucentMaterialsMap, i);
                     loader.load(matdata[i]['data'], onLoaded);
                 }
             }

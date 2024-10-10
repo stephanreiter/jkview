@@ -148,7 +148,7 @@ class ThreedoFile:
                 match = FACE_RE.match(line)
                 key = int(match.group(1))
                 mat = int(match.group(2))
-                # ftype = int(match.group(3)[2:], 16)
+                ftype = int(match.group(3)[2:], 16)
                 geo = int(match.group(4))
                 # light = int(match.group(5))
                 # tex = int(match.group(6))
@@ -158,6 +158,8 @@ class ThreedoFile:
                 rest_re = _get_face_rest_re(nverts)
                 rest = line[match.end(9):]
                 match = rest_re.match(rest)
+
+                translucent = (ftype & 0x2) != 0
 
                 vertices = []
                 for i in range(nverts):
@@ -171,8 +173,8 @@ class ThreedoFile:
                     diffuse = [extra_light + xyzi[3]] * 3
                     vertices.append([pos, uv, diffuse, norm])
 
-                curmesh[key] = {'vertices': vertices,
-                                'geo': geo, 'material': mat}
+                curmesh[key] = {'vertices': vertices, 'geo': geo,
+                                'material': mat, 'translucent': translucent}
 
         # keep only the highest resolution (geoset 0)
         self.meshes = geosets[0]
