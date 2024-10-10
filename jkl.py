@@ -136,7 +136,7 @@ class JklFile:
                 key = int(match.group(1))
                 mat = int(match.group(2))
                 surfflags = int(match.group(3)[2:], 16)
-                # faceflags = int(match.group(4)[2:], 16)
+                faceflags = int(match.group(4)[2:], 16)
                 geo = int(match.group(5))
                 light = int(match.group(6))
                 # tex = int(match.group(7))
@@ -150,6 +150,7 @@ class JklFile:
                 uv_scale *= 2 if (surfflags & 0x20) else 1
                 uv_scale *= 8 if (surfflags & 0x40) else 1
                 ignore_lighting = (light == 1)
+                translucent = (faceflags & 0x2) != 0
 
                 rest_re = _get_surface_rest_re(nverts, mots)
                 match = rest_re.match(rest)
@@ -186,7 +187,8 @@ class JklFile:
                     'vertices': vertices,
                     'surfflags': surfflags,
                     'geo': geo,
-                    'material': mat
+                    'material': mat,
+                    'translucent': translucent
                 }
 
             else:
