@@ -150,6 +150,7 @@ class JklFile:
                 uv_scale *= 2 if (surfflags & 0x20) else 1
                 uv_scale *= 8 if (surfflags & 0x40) else 1
                 ignore_lighting = (light == 1)
+                twosided = (faceflags & 0x1) != 0
                 translucent = (faceflags & 0x2) != 0
 
                 rest_re = _get_surface_rest_re(nverts, mots)
@@ -182,6 +183,9 @@ class JklFile:
                         l = min(1, l + extra_light)
                         diffuse = (l, l, l)
                     vertices.append([xyzs[xyz_idx], uv, diffuse])
+
+                if twosided:
+                    vertices.extend(reversed(vertices))
 
                 surfaces[key] = {
                     'vertices': vertices,

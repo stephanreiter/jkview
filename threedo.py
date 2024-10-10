@@ -159,6 +159,7 @@ class ThreedoFile:
                 rest = line[match.end(9):]
                 match = rest_re.match(rest)
 
+                twosided = (ftype & 0x1) != 0
                 translucent = (ftype & 0x2) != 0
 
                 vertices = []
@@ -172,6 +173,9 @@ class ThreedoFile:
                     uv = vdata['uv'][uv_idx] if geo == 4 else (0, 0)
                     diffuse = [extra_light + xyzi[3]] * 3
                     vertices.append([pos, uv, diffuse, norm])
+
+                if twosided:
+                    vertices.extend(reversed(vertices))
 
                 curmesh[key] = {'vertices': vertices, 'geo': geo,
                                 'material': mat, 'translucent': translucent}
