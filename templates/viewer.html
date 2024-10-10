@@ -154,6 +154,8 @@
     <div id="spawninfo">
         <span id="spawn" class="material-symbols-outlined md-32" title="Jump into map">emoji_people</span>
         <span id="showwholemap" class="material-symbols-outlined md-32" title="Explore from high above">globe</span>
+        <span id="togglewireframe" class="material-symbols-outlined md-32"
+            title="Toggle solid/wireframe">deployed_code</span>
     </div>
 
     <script src="{{ url_for('static', filename='js/progressbar.min.js') }}"></script>
@@ -194,6 +196,7 @@
         var infos = ['touchinfo', 'touchinfofps', 'mouseinfo', 'mouseinfofps'];
         var lastInfoFadeTimeout;
         var inverseProjectionViewMatrix = new THREE.Matrix4();
+        var wireframe = false;
 
         function showControlsInfo() {
             // show platform-specific info about controls and fade out after 5 seconds
@@ -233,8 +236,19 @@
                     showWholeMap();
                     showControlsInfo();
                 };
+                document.getElementById('togglewireframe').onclick = function () {
+                    toggleWireframe();
+                };
                 document.getElementById('spawninfo').style.visibility = 'visible';
             }
+        }
+
+        function toggleWireframe() {
+            wireframe = !wireframe;
+            for (var i = 0; i < materialArray.length; ++i) {
+                materialArray[i].wireframe = wireframe;
+            }
+            animate();
         }
 
         var progress = new ProgressBar.SemiCircle('#progress', {
