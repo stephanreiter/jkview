@@ -6,23 +6,6 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
     <style>
-        body {
-            font-family: sans-serif;
-            background-color: #444444;
-            margin: 0px;
-            overflow: hidden;
-        }
-
-        #progress {
-            position: absolute;
-            z-index: 1;
-            width: 300px;
-            height: 150px;
-            left: calc(50vw - 150px);
-            top: calc(50vh - 75px);
-            text-align: center;
-        }
-
         .info {
             position: absolute;
             top: 0px;
@@ -44,7 +27,7 @@
             position: absolute;
             bottom: 0px;
             right: 0px;
-            width: 25%;
+            width: 33%;
             padding: 10px;
             box-sizing: border-box;
             text-align: right;
@@ -68,11 +51,11 @@
             margin: 0;
         }
 
-        #spawninfo {
+        #tools {
             position: absolute;
             bottom: 0px;
             left: 0px;
-            width: 25%;
+            width: 50%;
             padding: 10px;
             box-sizing: border-box;
             text-align: left;
@@ -82,14 +65,15 @@
             visibility: hidden;
         }
 
-        #spawninfo span {
+        #tools span {
             cursor: pointer;
         }
 
-        .material-symbols-outlined.md-32 {
-            font-size: 32px;
+        #spawninfo {
+            display: none;
         }
     </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
     <script type="importmap">
     {
       "imports": {
@@ -148,12 +132,14 @@
         Look around: drag.
     </div>
     <div id="mapinfo">
-        <p><b>Maps:</b></p>
-        <ul id="mapinfolist"></ul>
+        <p><label for="mapinfolist">Maps:</label></p>
+        <select id="mapinfolist" class="select-css"></select>
     </div>
-    <div id="spawninfo">
-        <span id="spawn" class="material-symbols-outlined md-32" title="Jump into map">emoji_people</span>
-        <span id="showwholemap" class="material-symbols-outlined md-32" title="Explore from high above">globe</span>
+    <div id="tools">
+        <span id="spawninfo">
+            <span id="spawn" class="material-symbols-outlined md-32" title="Jump into map">emoji_people</span>
+            <span id="showwholemap" class="material-symbols-outlined md-32" title="Explore from high above">globe</span>
+        </span>
         <span id="togglewireframe" class="material-symbols-outlined md-32"
             title="Toggle solid/wireframe">deployed_code</span>
     </div>
@@ -168,24 +154,21 @@
             || (navigator.MaxTouchPoints > 0)
             || (navigator.msMaxTouchPoints > 0));
 
-        var maps = JSON.parse({{ maps| tojson | safe }});
+        var maps = JSON.parse({{ maps | tojson | safe }});
         if (maps.length > 1) {
             var mapinfoList = document.getElementById('mapinfolist');
             for (var i = 0; i < maps.length; ++i) {
                 var name_and_link = maps[i];
-                var name = name_and_link[0];
-
-                var linkText = document.createTextNode(name);
-
-                var a = document.createElement('a');
-                a.appendChild(linkText);
-                a.title = "Switch to map " + name;
-                a.href = name_and_link[1];
-
-                var li = document.createElement("li");
-                li.appendChild(a);
-
-                mapinfoList.appendChild(li);
+                var opt = document.createElement("option");
+                opt.value = name_and_link[1];
+                opt.text = name_and_link[0];
+                if (window.location.search == opt.value) {
+                    opt.selected = true;
+                }
+                mapinfoList.add(opt);
+            }
+            mapinfoList.onchange = function () {
+                window.location.href = mapinfoList.value;
             }
         }
 
@@ -236,11 +219,13 @@
                     showWholeMap();
                     showControlsInfo();
                 };
-                document.getElementById('togglewireframe').onclick = function () {
-                    toggleWireframe();
-                };
-                document.getElementById('spawninfo').style.visibility = 'visible';
+                document.getElementById('spawninfo').style.display = 'inline';
             }
+
+            document.getElementById('togglewireframe').onclick = function () {
+                toggleWireframe();
+            };
+            document.getElementById('tools').style.visibility = 'visible';
         }
 
         function toggleWireframe() {

@@ -107,7 +107,7 @@ def _normalize_vector(v):
 def _apply_lighting(v, sector, lights):
     pos = v[0]
     n = _normalize_vector(v[3])
-    total = sector.get('ambient_light', 0)
+    total = sector.get('ambient_light', 0) if sector else 0
     for light in lights:
         lpos = (light['pos'][0] + light['offset'][0], light['pos'][1] +
                 light['offset'][1], light['pos'][2] + light['offset'][2])
@@ -121,7 +121,8 @@ def _apply_lighting(v, sector, lights):
                  * l[2]) / distance  # normalize l
         if ndotl > 0:
             total += ndotl * (1 - distance / range) * light['light']
-    return _add_light(v, total + sector.get('extra_light', 0))
+    extra_light = sector.get('extra_light', 0) if sector else 0
+    return _add_light(v, total + extra_light)
 
 
 def _rotation_matrix(rot):
@@ -145,8 +146,9 @@ def _instantiate_node(surfaces, model, node, transform, sector, lights, texcache
                 continue  # if there's no material, don't render the surface
 
             vertices = _transform_vertices(mesh_transform, surface['vertices'])
+            vertices = [_apply_lighting(v, sector, lights) for v in vertices]
             surfaces.append({
-                'vertices': [_apply_lighting(v, sector, lights) for v in vertices],
+                'vertices': vertices,
                 'material': texcache.load(material_name),
                 'translucent': surface['translucent']
             })
@@ -209,8 +211,10 @@ def _load_level(jkl_name, gobs, official=[]):
                 except:
                     continue  # if there's no material, don't render the surface
 
+                vertices = [_add_light(v, sector.get('extra_light', 0))
+                            for v in surface['vertices']]
                 surface_data = {
-                    'vertices': [_add_light(v, sector.get('extra_light', 0)) for v in surface['vertices']],
+                    'vertices': vertices,
                     'material': texcache.load(material_name),
                     'translucent': surface['translucent']
                 }
@@ -241,9 +245,47 @@ def _load_level(jkl_name, gobs, official=[]):
         return surfaces, model_surfaces, sky_surfaces, texcache.materials, level.spawn_points
 
 
+def _load_models(model_paths, gobs, official=[]):
+    with gob.try_open_gob_files(gobs) as vfs:
+        models = []
+
+        texcache = MaterialCache(vfs, official)
+        try:
+            master_colormap_name = b'dflt.cmp'
+            master_colormap = cmp.read_from_bytes(
+                vfs.read(b'misc/cmp/' + master_colormap_name))
+            texcache.set_current_colormap(
+                master_colormap_name, master_colormap)
+        except:
+            pass
+
+        pos = (0, 0, 0)
+        rot = (0, 0, 0)
+        sector = None
+        lights = []
+        for filename in model_paths:
+            try:
+                full_filename = b'3do/' + filename
+                model_threedo = threedo.read_from_bytes(
+                    vfs.read(full_filename))
+                models.append(_instantiate_model(
+                    model_threedo, pos, rot, sector, lights, texcache))
+            except:
+                models.append(None)  # model not found
+
+        return models, texcache.materials
+
+
+OFFICIAL = ['Res1hi.gob', 'Res2.gob', 'JKMRES.GOO']
+
+
 def load_level_from_gob(levelname, gob_path):
-    OFFICIAL = ['Res1hi.gob', 'Res2.gob', 'JKMRES.GOO']
     # Order matters: let level specific gobs override official resources.
     # This is relevant, for example, for the Blue Rain level (375): it has its own 3do/tree.3do.
     gobs = OFFICIAL + [gob_path]
     return _load_level(b'jkl/' + levelname, gobs=gobs, official=OFFICIAL)
+
+
+def load_models_from_gob(model_paths, gob_path):
+    gobs = OFFICIAL + [gob_path]
+    return _load_models(model_paths, gobs=gobs, official=OFFICIAL)

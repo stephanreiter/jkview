@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Skins preview powered by The Massassi Temple</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        .info {
+            position: absolute;
+            top: 0px;
+            left: 0px;
+            width: 100%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: center;
+            z-index: 2;
+            color: #cccccc;
+            user-select: none;
+            visibility: hidden;
+            opacity: 0;
+            transition: 1s opacity;
+            cursor: default;
+        }
+
+        #skininfo {
+            position: absolute;
+            bottom: 0px;
+            right: 0px;
+            width: 33%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: right;
+            z-index: 3;
+            color: #cccccc;
+            user-select: none;
+            visibility: hidden;
+        }
+
+        #skininfo a {
+            color: #cccccc;
+        }
+
+        #skininfo ul {
+            list-style: none;
+            margin: 0;
+        }
+
+        #skininfo p {
+            cursor: default;
+            margin: 0;
+        }
+
+        #tools {
+            position: absolute;
+            bottom: 0px;
+            left: 0px;
+            width: 50%;
+            padding: 10px;
+            box-sizing: border-box;
+            text-align: left;
+            z-index: 3;
+            color: #cccccc;
+            user-select: none;
+            visibility: hidden;
+        }
+
+        #tools span {
+            cursor: pointer;
+        }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@v0.168.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@v0.168.0/examples/jsm/"
+      }
+    }
+    </script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}" />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0" />
+</head>
+
+<body>
+    <div id="progress"></div>
+    <div id="mouseinfo" class="info">
+        <b><span id="mouseinfotitle"></span></b><br>
+        Rotate: left drag. Move: right drag. Zoom: wheel (hold Alt to zoom fast). Re-anchor: double-click.
+    </div>
+    <div id="touchinfo" class="info">
+        <b><span id="touchinfotitle"></span></b><br>
+        Rotate: drag. Move: two-finger drag. Zoom: pinch.
+    </div>
+    <div id="skininfo">
+        <p><label for="skininfolist">Skins:</label></p>
+        <select id="skininfolist" class="select-css"></select>
+    </div>
+    <div id="tools">
+        <span id="togglewireframe" class="material-symbols-outlined md-32"
+            title="Toggle solid/wireframe">deployed_code</span>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/progressbar.min.js') }}"></script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        var isTouchDevice = (('ontouchstart' in window)
+            || (navigator.MaxTouchPoints > 0)
+            || (navigator.msMaxTouchPoints > 0));
+
+        var skins = JSON.parse({{ skins | tojson | safe }});
+        if (skins.length > 1) {
+            var skininfoList = document.getElementById('skininfolist');
+            for (var i = 0; i < skins.length; ++i) {
+                var opt = document.createElement("option");
+                opt.value = i;
+                opt.text = skins[i];
+                skininfoList.add(opt);
+            }
+            skininfoList.onchange = function () {
+                switchToSkin(skininfoList.value);
+                animate();
+            }
+        }
+
+        var camera, controls, scene, renderer, skinsdata, mesh, materialArray;
+        var infos = ['touchinfo', 'mouseinfo'];
+        var lastInfoFadeTimeout;
+        var wireframe = false;
+
+        function showControlsInfo() {
+            // show platform-specific info about controls and fade out after 5 seconds
+            var selectedInfo = isTouchDevice ? 'touchinfo' : 'mouseinfo';
+            if (!controls.enabled) selectedInfo += 'fps';
+            for (var i = 0; i < infos.length; ++i) {
+                if (infos[i] == selectedInfo) continue;
+                var info = document.getElementById(infos[i]);
+                info.style.visibility = 'hidden';
+                info.style.opacity = '0';
+            }
+            if (lastInfoFadeTimeout) {
+                window.clearTimeout(lastInfoFadeTimeout);
+            }
+
+            var info = document.getElementById(selectedInfo);
+            info.style.opacity = '100';
+            info.style.visibility = 'visible';
+            lastInfoFadeTimeout = window.setTimeout(function () {
+                info.style.opacity = '0';
+            }, 5000);
+        }
+
+        function showInfo() {
+            showControlsInfo();
+
+            if (skins.length > 1) {
+                document.getElementById('skininfo').style.visibility = 'visible';
+            }
+
+            document.getElementById('togglewireframe').onclick = function () {
+                toggleWireframe();
+            };
+            document.getElementById('tools').style.visibility = 'visible';
+        }
+
+        function toggleWireframe() {
+            wireframe = !wireframe;
+            for (var i = 0; i < materialArray.length; ++i) {
+                materialArray[i].wireframe = wireframe;
+            }
+            animate();
+        }
+
+        var progress = new ProgressBar.SemiCircle('#progress', {
+            color: '#ccc',
+            text: {
+                autoStyleContainer: false,
+            },
+        });
+
+        function hideProgress() {
+            var progressContainer = document.getElementById('progress');
+            progressContainer.parentNode.removeChild(progressContainer);
+        }
+
+        function skinLoadProgress(frac) {
+            return 0.3 + frac * 0.7;
+        }
+
+        function onSkinLoadProgress(ev) {
+            if (ev.lengthComputable) {
+                progress.animate(skinLoadProgress(ev.loaded / ev.total));
+            }
+        }
+
+        function showWholeCharacter() {
+            var bb = mesh.geometry.boundingBox;
+            var bs = new THREE.Sphere();
+            bb.getBoundingSphere(bs);
+            var center = new THREE.Vector3();
+            bb.getCenter(center);
+            camera.position.copy(center);
+            camera.position.add(new THREE.Vector3(bs.radius * 0.3, bs.radius * 1.618, bs.radius * 0.3));
+            controls.target.copy(center);
+            controls.update();
+            animate();
+        }
+
+        var progressDone = false;
+        progress.setText("Loading ...");
+        progress.animate(0);
+        init();
+
+        progress.animate(skinLoadProgress(0));
+        loadJSON('{{ skins_js|safe }}', function (data) {
+            loadSkins(data);
+            // no progress for textures, we'll start using them when available
+            loadJSON('{{ mat_js|safe }}', function (matdata) {
+                loadMaterials(matdata);
+            });
+        }, onSkinLoadProgress);
+
+        function switchToSkin(idx) {
+            var surfaces = skinsdata['surfaces'][idx];
+
+            var pos = []
+            var uv = [];
+            var materialIndices = new Map();
+            for (var i = 0; i < surfaces.length; ++i) {
+                var verts = surfaces[i]['vertices'];
+                var v0 = pos.length / 3;
+                for (var v = 0; v < verts.length; ++v) {
+                    pos.push(...verts[v][0]);
+                    uv.push(...verts[v][1]);
+                }
+
+                var material = surfaces[i]['material'];
+                if (!materialIndices.has(material)) {
+                    materialIndices.set(material, []);
+                }
+                var indices = materialIndices.get(material);
+                for (var v = 2; v < verts.length; ++v) {
+                    indices.push(v0, v0 + v - 1, v0 + v);
+                }
+            }
+
+            var geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+            geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+            var allIndices = [];
+            materialIndices.forEach((indices, material) => {
+                geometry.addGroup(allIndices.length, indices.length, material);
+                allIndices.push(...indices);
+            });
+            geometry.setIndex(allIndices);
+            geometry.computeBoundingBox();
+
+            if (mesh) scene.remove(mesh);
+            mesh = new THREE.Mesh(geometry, materialArray);
+            scene.add(mesh);
+
+            var name = skins[idx];
+            document.getElementById('mouseinfotitle').innerText = name;
+            document.getElementById('touchinfotitle').innerText = name;
+            showControlsInfo();
+        }
+
+        function loadSkins(data) {
+            if (typeof data == 'undefined' || data.surfaces.length == 0) {
+                progress.setText("Loading failed.");
+                progress.animate(1);
+                console.error("Failed to retrieve skins!");
+                return;
+            }
+
+            materialArray = [];
+            var materialColors = data['material_colors'];
+            for (var i = 0; i < materialColors.length; ++i) {
+                materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[i] }));
+            }
+
+            skinsdata = data;
+            switchToSkin(0);
+            showWholeCharacter();
+
+            // render the first frame with the mesh
+            animate();
+
+            // enable user interaction now
+            controls.addEventListener('change', animate);
+
+            progress.animate(1, function () {
+                progress.setText("Done!");
+                window.setTimeout(function () {
+                    progressDone = true;
+                    animate(); // rerender
+                }, 400);
+            });
+        }
+
+        function debounce(callback, timeout) {
+            var timer;
+            return (...args) => {
+                window.clearTimeout(timer);
+                timer = window.setTimeout(() => {
+                    callback(...args);
+                }, timeout);
+            };
+        }
+
+        function loadMaterials(matdata) {
+            if (typeof matdata == 'undefined') {
+                console.error("Failed to retrieve materials!");
+                return;
+            }
+
+            var loader = new THREE.TextureLoader();
+            var debouncedAnimate = debounce(animate, 100);
+            for (var i = 0; i < matdata.length; ++i) {
+                if (matdata[i] != '') {
+                    var onLoaded = function (mats, idx) {
+                        return function (tex) {
+                            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                            tex.colorSpace = THREE.SRGBColorSpace;
+                            mats[idx] = new THREE.MeshBasicMaterial({
+                                map: tex,
+                                alphaTest: 1.0 / 255.0,
+                            });
+                            debouncedAnimate();
+                        };
+                    }(materialArray, i);
+                    loader.load(matdata[i]['data'], onLoaded);
+                }
+            }
+        }
+
+        function loadJSON(url, callback, progressCallback) {
+            var xobj = new XMLHttpRequest();
+            xobj.overrideMimeType("application/json");
+            xobj.open('GET', url, true);
+            xobj.onprogress = progressCallback;
+            xobj.onreadystatechange = function () {
+                if (xobj.readyState == 4) {
+                    if (xobj.status == 200) {
+                        callback(JSON.parse(xobj.responseText));
+                    }
+                    else {
+                        callback(undefined); // error case
+                    }
+                }
+            };
+            xobj.send();
+            return xobj;
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x444444);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 1000);
+            camera.up.set(0, 0, 1);
+            scene.add(camera);
+
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableKeys = false;
+            controls.rotateSpeed = 0.25;
+            controls.zoomSpeed = 0.5;
+
+            if (!isTouchDevice) {
+                // alt held speeds up zooming
+                window.addEventListener("keyup", function (ev) {
+                    if (ev.key == 'Alt') controls.zoomSpeed = 0.5;
+                });
+                window.addEventListener("keydown", function (ev) {
+                    if (ev.key == 'Alt') controls.zoomSpeed = 2;
+                });
+            }
+
+            window.addEventListener('resize', onWindowResize, false);
+
+            // render the first frame
+            animate();
+        }
+
+        function onWindowResize() {
+            var width = window.innerWidth;
+            var height = window.innerHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(render);
+        }
+
+        function render() {
+            if (progressDone) {
+                progressDone = false;
+                hideProgress();
+                showInfo();
+            }
+            renderer.render(scene, camera);
+        }
+    </script>
+
+</body>
+
+</html>
