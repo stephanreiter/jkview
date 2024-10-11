@@ -24,6 +24,10 @@ class GobFile:
 
     def ls(self):
         return self.toc.keys()
+    
+    def contains(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        return name in self.toc
 
     def read(self, name):
         name = name.lower()  # CASE INSENSITIVE
@@ -96,6 +100,10 @@ class MultiGob:
     def src(self, name):
         name = name.lower()  # CASE INSENSITIVE
         return self.toc[name][1]
+
+    def contains(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        return name in self.toc
 
     def read(self, name):
         name = name.lower()  # CASE INSENSITIVE

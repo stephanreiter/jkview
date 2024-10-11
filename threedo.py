@@ -5,16 +5,17 @@ SUBSECTION_RE = re.compile(br'(.+)\s+\d+\Z')  # [ITEM TYPE] [COUNT]EOL
 ITEM_RE = re.compile(br'(\d+):')  # [IDX]: ...
 MAT_RE = re.compile(br'(\d+):\s+(\S+)')  # [IDX]: [FILENAME]
 INTEGER_VALUE_RE = re.compile(br'([\D ]*)\s+(-?\d+)\Z')
+FLOAT_FRAGMENT2 = r'-?\d*(?:\.\d+)?(?:[eE][-+]?\d+)?'
 
 VERTEX_XYZI_RE = re.compile(
-    br'(\d+):\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
-VERTEX_UV_RE = re.compile(br'(\d+):\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
+    fr'(\d+):\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})'.encode())
+VERTEX_UV_RE = re.compile(fr'(\d+):\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})'.encode())
 NORMAL_RE = re.compile(
-    br'(\d+):\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)')
+    fr'(\d+):\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})'.encode())
 FACE_RE = re.compile(
-    br'(\d+):\s+(-?\d+?)\s+(0x[0-9a-fA-F]+)\s+(-?\d+?)\s+(-?\d+?)\s+(-?\d+?)\s+(-?\d*(\.\d+)?)\s+(\d+)')
+    fr'(\d+):\s+(-?\d+?)\s+(0x[0-9a-fA-F]+)\s+(-?\d+?)\s+(-?\d+?)\s+(-?\d+?)\s+({FLOAT_FRAGMENT2})\s+(\d+)'.encode())
 
-NODE_RE = re.compile(br'(\d+):\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(-?\d*(\.\d+)?)\s+(\D+)')
+NODE_RE = re.compile(fr'(\d+):\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+(\D+)'.encode())
 
 
 def _get_face_rest_re(nverts):
@@ -54,15 +55,15 @@ class ThreedoFile:
                 # sibling = int(match.group(7))
                 # num_children = int(match.group(8))
                 x = float(match.group(9))
-                y = float(match.group(11))
-                z = float(match.group(13))
-                pitch = float(match.group(15))
-                yaw = float(match.group(17))
-                roll = float(match.group(19))
-                pivot_x = float(match.group(21))
-                pivot_y = float(match.group(23))
-                pivot_z = float(match.group(25))
-                # name = match.group(27)
+                y = float(match.group(10))
+                z = float(match.group(11))
+                pitch = float(match.group(12))
+                yaw = float(match.group(13))
+                roll = float(match.group(14))
+                pivot_x = float(match.group(15))
+                pivot_y = float(match.group(16))
+                pivot_z = float(match.group(17))
+                # name = match.group(18)
 
                 nodes[key] = {
                     'mesh': mesh,
@@ -127,22 +128,22 @@ class ThreedoFile:
                 match = VERTEX_XYZI_RE.match(line)
                 key = int(match.group(1))
                 x = float(match.group(2))
-                y = float(match.group(4))
-                z = float(match.group(6))
-                i = float(match.group(8))
+                y = float(match.group(3))
+                z = float(match.group(4))
+                i = float(match.group(5))
                 vdata[target][key] = (x, y, z, i)
             elif target == 'uv':
                 match = VERTEX_UV_RE.match(line)
                 key = int(match.group(1))
                 u = float(match.group(2))
-                v = float(match.group(4))
+                v = float(match.group(3))
                 vdata[target][key] = (u, v)
             elif target == 'norm':
                 match = NORMAL_RE.match(line)
                 key = int(match.group(1))
                 x = float(match.group(2))
-                y = float(match.group(4))
-                z = float(match.group(6))
+                y = float(match.group(3))
+                z = float(match.group(4))
                 vdata[target][key] = (x, y, z)
             elif target == 'faces':
                 match = FACE_RE.match(line)
@@ -153,10 +154,10 @@ class ThreedoFile:
                 # light = int(match.group(5))
                 # tex = int(match.group(6))
                 extra_light = float(match.group(7))
-                nverts = int(match.group(9))
+                nverts = int(match.group(8))
 
                 rest_re = _get_face_rest_re(nverts)
-                rest = line[match.end(9):]
+                rest = line[match.end(8):]
                 match = rest_re.match(rest)
 
                 twosided = (ftype & 0x1) != 0
