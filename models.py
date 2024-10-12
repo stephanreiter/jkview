@@ -28,10 +28,13 @@ def read_from_file(f):
         if match:
             threedo = match.group(2)
             name_comment_start = line.rfind(b'#')
-            name = line[name_comment_start +
-                        1:].strip().decode() if name_comment_start != -1 else None
-            if len(name) >= 2 and name[0] == '"' and name[-1] == '"':
-                name = name[1:-1]
+            if name_comment_start == -1:
+                name = "unknown"
+            else:
+                name = line[name_comment_start + 1:].strip()
+                name = name.decode(errors='ignore')
+                if len(name) >= 2 and name[0] == '"' and name[-1] == '"':
+                    name = name[1:-1]
             models.append((threedo, name))
 
     return ModelsFile(models)
