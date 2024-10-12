@@ -164,6 +164,9 @@ def _extract_skin(zip_url):
     try:
         with gob.open_gob_files(loader.OFFICIAL + [gob_path]) as vfs:
             info = models.read_from_bytes(vfs.read(b'misc/models.dat'))
+            # Add single player models for MotS
+            info.models.append((b'kk.3do', 'Kyle Katarn'))
+            info.models.append((b'mj.3do', 'Mara Jade'))
         with gob.open_gob_file(gob_path) as vfs:
             model_paths_and_names = [
                 m for m in info.models if vfs.contains(b'3do/' + m[0])]
