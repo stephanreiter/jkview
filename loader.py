@@ -2,7 +2,7 @@ import math
 import transformations as tf
 import io
 
-from PIL import Image, ImageFilter
+from PIL import ImageFilter
 
 import cmp
 import gob
@@ -37,6 +37,9 @@ def _make_material_from_frames(frames, make_lowres):
     return mat
 
 
+FALLBACK_MATERIAL_FULL_NAME = b'mat/dflt.mat'
+
+
 class MaterialCache:
     def __init__(self, vfs, official):
         self.vfs = vfs
@@ -57,8 +60,12 @@ class MaterialCache:
             for prefix in [b'mat', b'3do/mat']:
                 try:
                     material_full_name = prefix + b'/' + material_name
-                    frames = mat.load_frames_from_bytes(
-                        self.vfs.read(material_full_name), colormap=self.colormap)
+                    try:
+                        frames = mat.load_frames_from_bytes(
+                            self.vfs.read(material_full_name), colormap=self.colormap)
+                    except ValueError:
+                        frames = mat.load_frames_from_bytes(
+                            self.vfs.read(FALLBACK_MATERIAL_FULL_NAME), colormap=self.colormap)
                     is_official = self.vfs.src(
                         material_full_name) in self.official
                     material = _make_material_from_frames(frames, is_official)
