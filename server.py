@@ -122,8 +122,10 @@ def _extract_map(zip_url):
                         levelname = levelname[:-4]  # drop .jkl suffix
                     map_info['maps'].append(levelname.decode())
                 except:
+                    if DEVELOPMENT_MODE: raise
                     pass  # try the other maps in the episode
     except:
+        if DEVELOPMENT_MODE: raise
         pass  # well ... not much we can do
     finally:
         # always write the file to avoid retrying the extraction
@@ -162,7 +164,7 @@ def _extract_skin(zip_url):
                 model_paths_and_names.append((b'ky.3do', 'Kyle Katarn'))
 
             model_paths = [m[0] for m in model_paths_and_names]
-            surfaces, materials = loader.load_models(model_paths, vfs)
+            surfaces, materials = loader.load_models(model_paths, vfs, throw_on_error=DEVELOPMENT_MODE)
 
             for i, model in enumerate(model_paths_and_names):
                 if surfaces[i] is None:
@@ -200,6 +202,7 @@ def _extract_skin(zip_url):
             _write_cache_atomically(
                 zip_url, 0, 'skins.json', 'wt', json.dumps(skins_data))
     except:
+        if DEVELOPMENT_MODE: raise
         pass  # well ... not much we can do
     finally:
         # always write the file to avoid retrying the extraction
@@ -243,7 +246,7 @@ def root_level_material_data():
 
 
 def _get_mapinfo(zip_url):
-    if not ALWAYS_REGEN:
+    if not DEVELOPMENT_MODE:
         mapinfo_path = _get_cache_filename(zip_url, 'all', 'mapinfo.json')
         if os.path.exists(mapinfo_path):
             with open(mapinfo_path, 'rt') as f:
@@ -275,7 +278,7 @@ def root_level_viewer():
 
 
 def _get_skininfo(zip_url):
-    if not ALWAYS_REGEN:
+    if not DEVELOPMENT_MODE:
         skininfo_path = _get_cache_filename(zip_url, 'all', 'skininfo.json')
         if os.path.exists(skininfo_path):
             with open(skininfo_path, 'rt') as f:

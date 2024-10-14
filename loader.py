@@ -236,7 +236,7 @@ def load_level(jkl_name, vfs):
     return surfaces, model_surfaces, sky_surfaces, texcache.materials, level.spawn_points
 
 
-def load_models(model_paths, vfs):
+def load_models(model_paths, vfs, throw_on_error=False):
     models = []
 
     texcache = MaterialCache(vfs)
@@ -259,6 +259,7 @@ def load_models(model_paths, vfs):
             models.append(_instantiate_model(
                 model_threedo, pos, rot, sector, lights, texcache))
         except:
+            if throw_on_error: raise
             models.append(None)  # model not found
 
     return models, texcache.materials

@@ -6,9 +6,9 @@
 # enable CENSOR_ALWAYS to avoid extraction of full-resolution assets on server
 CENSOR_ALWAYS = False
 
-# enable ALWAYS_REGEN to regenerate level data on every request.
+# regenerate level data on every request and don't swallow errors
 # FOR DEVELOPMENT ONLY!
-ALWAYS_REGEN = False
+DEVELOPMENT_MODE = False
 
 # increment VERSION to invalidate caches
 VERSION = 12
