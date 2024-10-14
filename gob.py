@@ -39,6 +39,9 @@ class GobFile:
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.close()
+
+    def close(self):
         self.file_handle.close()
 
     def ls(self):
@@ -97,15 +100,12 @@ class VirtualFileSystem:
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.close()
+
+    def close(self):
         for gob in self.gobs:
-            try:
-                gob.close()
-            except:
-                pass
-        try:
-            self.zip_handle.close()
-        except:
-            pass
+            gob.close()
+        self.zip_handle.close()
 
     def ls(self):
         return self.multi_gob.ls()
@@ -121,6 +121,9 @@ class ZipGob:
     def __init__(self, borrowed_zip_handle, file_infos):
         self.zip_handle = borrowed_zip_handle
         self.file_infos = file_infos
+
+    def close(self):
+        pass  # zip_handle is only borrowed
 
     def ls(self):
         return self.file_infos.keys()
@@ -142,7 +145,6 @@ def _try_build_virtual_gob(zip_file):
         if info.is_dir():
             continue
         filename = info.filename.lower()
-        print(filename)
         path, file = os.path.split(filename)
         # sometimes the contents are within a folder in the zip
         # detect that and strip the folder's name
@@ -203,6 +205,11 @@ def _open_gobs_in_zip(zip_filename):
         raise
 
 
+def open_zip(zip_filename):
+    zip_handle, zip_gobs = _open_gobs_in_zip(zip_filename)
+    return VirtualFileSystem(zip_handle, zip_gobs, [])
+
+
 def open_game_gobs_and_zip(zip_filename):
     zip_handle, zip_gobs = _open_gobs_in_zip(zip_filename)
 
@@ -218,14 +225,9 @@ def open_game_gobs_and_zip(zip_filename):
 
 if __name__ == "__main__":
     filename = sys.argv[1]
-
-    if os.path.splitext(filename)[1] == ".zip":
-        _, gobs = _open_gobs_in_zip(filename)
-    else:
-        gobs = [open_gob_file(filename)]
-
-    for gobfile in gobs:
-        for name in gobfile.ls():
-            data = gobfile.read(name)
+    is_zip = os.path.splitext(filename)[1] == ".zip"
+    with open_zip(filename) if is_zip else open_gob_file(filename) as vfs:
+        for name in vfs.ls():
+            data = vfs.read(name)
             print(name, len(data), file=sys.stderr)
-        os.write(1, gobfile.read(sys.argv[2].encode()))  # write to stdout
+        os.write(1, vfs.read(sys.argv[2].encode()))  # write to stdout
