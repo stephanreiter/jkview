@@ -1,58 +1,30 @@
 import os
 import struct
 import sys
+import zipfile
+
+OFFICIAL = ['Res1hi.gob', 'Res2.gob', 'JKMRES.GOO']
 
 
 class GobFile:
-    def __init__(self, filename, toc):
-        self.filename = filename
-        self.toc = toc
+    def __init__(self, file_handle):
+        self.file_handle = file_handle
 
-    def open(self):
-        self.f = open(self.filename, 'rb')
-
-    def close(self):
-        self.f.close()
-        del self.f
-
-    def __enter__(self):
-        self.open()
-        return self
-
-    def __exit__(self, exc_type, exc_value, exc_traceback):
-        self.close()
-
-    def ls(self):
-        return self.toc.keys()
-    
-    def contains(self, name):
-        name = name.lower()  # CASE INSENSITIVE
-        return name in self.toc
-
-    def read(self, name):
-        name = name.lower()  # CASE INSENSITIVE
-        offset, length = self.toc[name]
-        self.f.seek(offset)
-        return self.f.read(length)
-
-
-def open_gob_file(filename):
-    with open(filename, 'rb') as f:
         ident, offsetFirstFileSize, offsetCout, numberFiles = struct.unpack(
-            'Iiii', f.read(16))
+            'Iiii', file_handle.read(16))
         if ident != 541216583 or offsetFirstFileSize != 20 or offsetCout != 12:
             raise Exception("Invalid file!")
 
-        toc = {}
-        for i in range(numberFiles):
+        self.toc = {}
+        for _ in range(numberFiles):
             offset, length, name = struct.unpack(
-                'ii128s', f.read(136))
+                'ii128s', file_handle.read(136))
             idx = name.find(b'\0')
             if idx != -1:
                 name = name[:idx]
             name = name.lower()  # CASE INSENSITIVE
             name = name.replace(b'\\', b'/')  # use forward slashes
-            toc[name] = (offset, length)
+            self.toc[name] = (offset, length)
 
             # WORK AROUND FOR SOME MAPS
             # the JK engine doesn't support spaces in filenames
@@ -60,31 +32,68 @@ def open_gob_file(filename):
             # so give this file a second name; this fixes loading of massassi map #753
             if b' ' in name:
                 name = name.split(b' ')[0]
-                if not name in toc:
-                    toc[name] = (offset, length)
+                if not name in self.toc:
+                    self.toc[name] = (offset, length)
 
-        return GobFile(filename, toc)
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, exc_traceback):
+        self.file_handle.close()
+
+    def ls(self):
+        return self.toc.keys()
+
+    def contains(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        return name in self.toc
+
+    def read(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        offset, length = self.toc[name]
+        self.file_handle.seek(offset)
+        return self.file_handle.read(length)
+
+
+def open_gob_file(filename):
+    f = open(filename, 'rb')
+    try:
+        return GobFile(f)
+    except:
+        f.close()
+        raise
 
 
 class MultiGob:
-    def __init__(self, gobs, filenames):
-        self.gobs = gobs
+    def __init__(self, gobs):
         toc = {}
-        for i, gob in enumerate(gobs):
-            for j in gob.ls():
-                toc[j] = (gob, filenames[i])
+        for gob in gobs:
+            for filename in gob.ls():
+                toc[filename] = gob
         self.toc = toc
 
+    def ls(self):
+        return self.toc.keys()
+
+    def contains(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        return name in self.toc
+
+    def read(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        return self.toc[name].read(name)
+
+
+class VirtualFileSystem:
+    def __init__(self, zip_handle, zip_gobs, official_gobs):
+        self.zip_handle = zip_handle
+        self.zip_gobs = MultiGob(zip_gobs)
+        # Order matters: let level specific gobs override official resources.
+        # This is relevant, for example, for the Blue Rain level (375): it has its own 3do/tree.3do.
+        self.gobs = official_gobs + zip_gobs
+        self.multi_gob = MultiGob(self.gobs)
+
     def __enter__(self):
-        opened = []
-        try:
-            for gob in self.gobs:
-                gob.open()
-                opened.append(gob)
-        except:
-            for gob in opened:
-                gob.close()
-            raise
         return self
 
     def __exit__(self, exc_type, exc_value, exc_traceback):
@@ -93,45 +102,70 @@ class MultiGob:
                 gob.close()
             except:
                 pass
+        try:
+            self.zip_handle.close()
+        except:
+            pass
 
     def ls(self):
-        return self.toc.keys()
-
-    def src(self, name):
-        name = name.lower()  # CASE INSENSITIVE
-        return self.toc[name][1]
+        return self.multi_gob.ls()
 
     def contains(self, name):
-        name = name.lower()  # CASE INSENSITIVE
-        return name in self.toc
+        return self.multi_gob.contains(name)
 
     def read(self, name):
-        name = name.lower()  # CASE INSENSITIVE
-        gob = self.toc[name][0]
-        return gob.read(name)
+        return self.multi_gob.read(name)
 
 
-def open_gob_files(filenames):
-    gobs = [open_gob_file(f) for f in filenames]
-    return MultiGob(gobs, filenames)
-
-
-def try_open_gob_files(filenames):
-    ok_gobs = []
-    ok_filenames = []
-    for filename in filenames:
+def _open_gobs_in_zip(zip_filename):
+    zip_file = zipfile.ZipFile(zip_filename)
+    try:
+        open_files = []
         try:
-            f = open_gob_file(filename)
+            # locate gob and goo (MotS) files and open them
+            gobs = []
+            for info in zip_file.infolist():
+                # case insensitive extension check:
+                filename = info.filename.lower()
+                if filename.endswith('.gob') or filename.endswith('.goo'):
+                    gob_file_handle = zip_file.open(info)
+                    open_files.append(gob_file_handle)
+                    gobs.append(GobFile(gob_file_handle))
+            if len(gobs) == 0:
+                raise Exception("No GOBs in archive!")
+            return zip_file, gobs
         except:
-            continue # skip if we failed to open the file
-        ok_gobs.append(f)
-        ok_filenames.append(filename)
-    return MultiGob(ok_gobs, ok_filenames)
+            for f in open_files:
+                f.close()
+            raise
+    except:
+        zip_file.close()
+        raise
+
+
+def open_game_gobs_and_zip(zip_filename):
+    zip_handle, zip_gobs = _open_gobs_in_zip(zip_filename)
+
+    official_gobs = []
+    for filename in OFFICIAL:
+        try:
+            official_gobs.append(open_gob_file(filename))
+        except:
+            pass  # if not found, ignore it
+
+    return VirtualFileSystem(zip_handle, zip_gobs, official_gobs)
 
 
 if __name__ == "__main__":
-    with open_gob_file(sys.argv[1]) as gobfile:
+    filename = sys.argv[1]
+
+    if os.path.splitext(filename)[1] == ".zip":
+        _, gobs = _open_gobs_in_zip(filename)
+    else:
+        gobs = [open_gob_file(filename)]
+
+    for gobfile in gobs:
         for name in gobfile.ls():
             data = gobfile.read(name)
             print(name, len(data), file=sys.stderr)
-        os.write(1, gobfile.read(sys.argv[2].encode())) # write to stdout
+        os.write(1, gobfile.read(sys.argv[2].encode()))  # write to stdout
