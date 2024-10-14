@@ -7,11 +7,11 @@ import hashlib
 import io
 import json
 import os
+import re
 import requests
 import shutil
 import tempfile
 import urllib.parse
-import zipfile
 
 import episode
 import gob
@@ -61,93 +61,71 @@ def _encode_color(tuple):
     return '#%02x%02x%02x' % (tuple[0], tuple[1], tuple[2])
 
 
-def _extract_gob(zip_url):
+def _fetch_zip(zip_url):
     cache_key = _get_cache_key(zip_url)
 
-    gob_path = os.path.join('downloads', '{}.gob'.format(cache_key))
-    if not os.path.isfile(gob_path):
-        zip_path = os.path.join('downloads', '{}.zip'.format(cache_key))
-        if not os.path.isfile(zip_path):
-            r = requests.get(zip_url)
-            with io.BytesIO(r.content) as zip_data:
-                _atomically_dump(zip_data, zip_path)
-
-        with zipfile.ZipFile(zip_path) as zip_file:
-            # locate the first gob file and write its contents atomically to gob_path
-            # note: MotS used goo as the extension: we'll also take that if found!
-            # TODO: deal with multiple gobs in zip, e.g. Rebel Agent (level 1900)
-            for info in zip_file.infolist():
-                # case insensitive extension check:
-                filename = info.filename.lower()
-                if filename.endswith('.gob') or filename.endswith('.goo'):
-                    with zip_file.open(info) as gob_file:
-                        _atomically_dump(gob_file, gob_path)
-                    break
-    return gob_path
+    zip_path = os.path.join('downloads', '{}.zip'.format(cache_key))
+    if not os.path.isfile(zip_path):
+        r = requests.get(zip_url)
+        with io.BytesIO(r.content) as zip_data:
+            _atomically_dump(zip_data, zip_path)
+    return zip_path
 
 
 def _extract_map(zip_url):
-    gob_path = _extract_gob(zip_url)
-
+    zip_path = _fetch_zip(zip_url)
     map_info = {'version': VERSION, 'title': 'Unknown', 'maps': []}
     try:
-        # read the episode.jk file from the target
-        with gob.open_gob_file(gob_path) as vfs:
-            info = episode.read_from_bytes(vfs.read(b'episode.jk'))
+        # read the episode.jk file from the archive
+        with gob.open_game_gobs_and_zip(zip_path) as vfs:
+            info = episode.read_from_bytes(vfs.zip_gobs.read(b'episode.jk'))
+            map_info['title'] = info.title.decode()
 
-        map_info['title'] = info.title.decode()
+            # then try loading the references levels
+            for levelname in info.levels:
+                try:
+                    episode_id = len(map_info['maps'])
+                    surfaces, model_surfaces, sky_surfaces, materials, spawn_points = loader.load_level(
+                        b'jkl/' + levelname, vfs)
 
-        for levelname in info.levels:
-            try:
-                episode_id = len(map_info['maps'])
+                    # divide vertex UVs by texture sizes
+                    for src in [surfaces, model_surfaces, sky_surfaces]:
+                        for surf in src:
+                            mat = materials[surf['material']]
+                            if mat and 'dims' in mat:
+                                sclu = 1.0 / mat['dims'][0]
+                                sclv = 1.0 / mat['dims'][1]
+                                for v in surf['vertices']:
+                                    v[1] = (v[1][0] * sclu, v[1][1] * sclv)
 
-                surfaces, model_surfaces, sky_surfaces, materials, spawn_points = loader.load_level_from_gob(
-                    levelname, gob_path)
-
-                # divide vertex UVs by texture sizes
-                for src in [surfaces, model_surfaces, sky_surfaces]:
-                    for surf in src:
-                        mat = materials[surf['material']]
-                        if mat and 'dims' in mat:
-                            sclu = 1.0 / mat['dims'][0]
-                            sclv = 1.0 / mat['dims'][1]
-                            for v in surf['vertices']:
-                                v[1] = (v[1][0] * sclu, v[1][1] * sclv)
-
-                # write censored and uncensored material data to mat.js
-                censor_states = [True] if CENSOR_ALWAYS else [True, False]
-                for censor in censor_states:
+                    # write material data to mat.js
                     material_data = []
                     for mat in materials:
                         if mat:
-                            censored = censor and 'lowres' in mat
-                            material_imgkey = 'lowres' if censored else 'image'
-                            data = _encode_image(mat[material_imgkey], mat['mime']) if (
-                                material_imgkey in mat) else ''
+                            data = _encode_image(mat['image'], mat['mime'])
                             material_data.append(
                                 {'data': data, 'name': mat['name'].decode()})
                         else:
                             material_data.append({'data': '', 'name': ''})
+                    _write_cache_atomically(
+                        zip_url, episode_id, 'mat.json', 'wt', json.dumps(material_data))
 
-                    matjs_filename = 'mat{0}.json'.format(
-                        '' if censor else '-full')
-                    _write_cache_atomically(zip_url, episode_id, matjs_filename,
-                                            'wt', json.dumps(material_data))
+                    # assemble map data
+                    material_colors = [_encode_color(
+                        mat['color']) if mat else '#000000' for mat in materials]
+                    map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces, 'sky_surfaces': sky_surfaces,
+                                'material_colors': material_colors, 'spawn_points': spawn_points}
+                    _write_cache_atomically(
+                        zip_url, episode_id, 'map.json', 'wt', json.dumps(map_data))
 
-                # assemble map data
-                material_colors = [_encode_color(
-                    mat['color']) if mat else '#000000' for mat in materials]
-                map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces, 'sky_surfaces': sky_surfaces,
-                            'material_colors': material_colors, 'spawn_points': spawn_points}
-                _write_cache_atomically(zip_url, episode_id, 'map.json',
-                                        'wt', json.dumps(map_data))
-
-                if levelname.endswith(b'.jkl'):
-                    levelname = levelname[:-4]  # drop .jkl suffix
-                map_info['maps'].append(levelname.decode())
-            except:
-                continue  # try the other maps in the episode
+                    if levelname.endswith(b'.jkl'):
+                        levelname = levelname[:-4]  # drop .jkl suffix
+                    map_info['maps'].append(levelname.decode())
+                except:
+                    if DEVELOPMENT_MODE: raise
+                    pass  # try the other maps in the episode
     except:
+        if DEVELOPMENT_MODE: raise
         pass  # well ... not much we can do
     finally:
         # always write the file to avoid retrying the extraction
@@ -158,58 +136,73 @@ def _extract_map(zip_url):
 
 
 def _extract_skin(zip_url):
-    gob_path = _extract_gob(zip_url)
+    zip_path = _fetch_zip(zip_url)
 
     skin_info = {'version': VERSION, 'skins': []}
     try:
-        with gob.open_gob_files(loader.OFFICIAL + [gob_path]) as vfs:
+        # read the models.dat from the virtual file system
+        with gob.open_game_gobs_and_zip(zip_path) as vfs:
             info = models.read_from_bytes(vfs.read(b'misc/models.dat'))
             # Add single player models for MotS
             info.models.append((b'kk.3do', 'Kyle Katarn'))
             info.models.append((b'mj.3do', 'Mara Jade'))
-        with gob.open_gob_file(gob_path) as vfs:
+
+            # then locate models inside the archive
             model_paths_and_names = [
-                m for m in info.models if vfs.contains(b'3do/' + m[0])]
-        model_paths = [m[0] for m in model_paths_and_names]
-        surfaces, materials = loader.load_models_from_gob(
-            model_paths, gob_path)
+                m for m in info.models if vfs.zip_gobs.contains(b'3do/' + m[0])]
+            if len(model_paths_and_names) == 0:
+                # try to discover models in the gob
+                model_filename_pattern = re.compile(b'3do/(.+)\.3do')
+                for file in vfs.zip_gobs.ls():
+                    match = model_filename_pattern.match(file)
+                    if match:
+                        filename = match.group(1) + b'.3do'
+                        model_paths_and_names.append(
+                            (filename, filename.decode()))
+            if len(model_paths_and_names) == 0:
+                # probably just reskins Kyle
+                model_paths_and_names.append((b'ky.3do', 'Kyle Katarn'))
 
-        for i, model in enumerate(model_paths_and_names):
-            if surfaces[i] is None:
-                continue
+            model_paths = [m[0] for m in model_paths_and_names]
+            surfaces, materials = loader.load_models(model_paths, vfs, throw_on_error=DEVELOPMENT_MODE)
 
-            skin_info['skins'].append(model[1])
+            for i, model in enumerate(model_paths_and_names):
+                if surfaces[i] is None:
+                    continue
 
-            # divide vertex UVs by texture sizes
-            for surf in surfaces[i]:
-                mat = materials[surf['material']]
-                if mat and 'dims' in mat:
-                    sclu = 1.0 / mat['dims'][0]
-                    sclv = 1.0 / mat['dims'][1]
-                    for v in surf['vertices']:
-                        v[1] = (v[1][0] * sclu, v[1][1] * sclv)
+                skin_info['skins'].append(model[1])
 
-        # write material data to mat.js
-        material_data = []
-        for mat in materials:
-            if mat:
-                data = _encode_image(mat['image'], mat['mime']) if (
-                    'image' in mat) else ''
-                material_data.append(
-                    {'data': data, 'name': mat['name'].decode()})
-            else:
-                material_data.append({'data': '', 'name': ''})
-        _write_cache_atomically(
-            zip_url, 0, 'skinmat.json', 'wt', json.dumps(material_data))
+                # divide vertex UVs by texture sizes
+                for surf in surfaces[i]:
+                    mat = materials[surf['material']]
+                    if mat and 'dims' in mat:
+                        sclu = 1.0 / mat['dims'][0]
+                        sclv = 1.0 / mat['dims'][1]
+                        for v in surf['vertices']:
+                            v[1] = (v[1][0] * sclu, v[1][1] * sclv)
 
-        # assemble skins data
-        material_colors = [_encode_color(
-            mat['color']) if mat else '#000000' for mat in materials]
-        skins_data = {'surfaces': [
-            s for s in surfaces if s is not None], 'material_colors': material_colors}
-        _write_cache_atomically(
-            zip_url, 0, 'skins.json', 'wt', json.dumps(skins_data))
+            # write material data to mat.js
+            material_data = []
+            for mat in materials:
+                if mat:
+                    data = _encode_image(mat['image'], mat['mime']) if (
+                        'image' in mat) else ''
+                    material_data.append(
+                        {'data': data, 'name': mat['name'].decode()})
+                else:
+                    material_data.append({'data': '', 'name': ''})
+            _write_cache_atomically(
+                zip_url, 0, 'skinmat.json', 'wt', json.dumps(material_data))
+
+            # assemble skins data
+            material_colors = [_encode_color(
+                mat['color']) if mat else '#000000' for mat in materials]
+            skins_data = {'surfaces': [
+                s for s in surfaces if s is not None], 'material_colors': material_colors}
+            _write_cache_atomically(
+                zip_url, 0, 'skins.json', 'wt', json.dumps(skins_data))
     except:
+        if DEVELOPMENT_MODE: raise
         pass  # well ... not much we can do
     finally:
         # always write the file to avoid retrying the extraction
@@ -249,13 +242,11 @@ def root_level_material_data():
     zip_url = _get_zip_url()
     episode_id = int(request.args.get('episode', 0))
     cache_key = _get_cache_key(zip_url)
-    censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
-    matjs_filename = 'mat{0}.json'.format('' if censor else '-full')
-    return send_from_directory('cache', '{0}-{1}-{2}'.format(cache_key, episode_id, matjs_filename))
+    return send_from_directory('cache', '{0}-{1}-{2}'.format(cache_key, episode_id, 'mat.json'))
 
 
 def _get_mapinfo(zip_url):
-    if not ALWAYS_REGEN:
+    if not DEVELOPMENT_MODE:
         mapinfo_path = _get_cache_filename(zip_url, 'all', 'mapinfo.json')
         if os.path.exists(mapinfo_path):
             with open(mapinfo_path, 'rt') as f:
@@ -272,23 +263,14 @@ def root_level_viewer():
     episode_id = int(request.args.get('episode', 0))
     map_info = _get_mapinfo(zip_url)
 
-    censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
-
     mapjs_url = 'map.json?version={0}&url={1}&episode={2}'.format(
         VERSION, zip_url, episode_id)
-    if not censor:
-        mapjs_url += '&ownsgame=1'
-
     matjs_url = 'mat.json?version={0}&url={1}&episode={2}'.format(
         VERSION, zip_url, episode_id)
-    if not censor:
-        matjs_url += '&ownsgame=1'
 
     maps = []
     for i, map in enumerate(map_info['maps']):
         episode_url = '?url={0}&episode={1}'.format(zip_url, i)
-        if not censor:
-            episode_url += '&ownsgame=1'
         maps.append([map, episode_url])
 
     return render_template('viewer.html', title=map_info['title'], maps=json.dumps(maps),
@@ -296,7 +278,7 @@ def root_level_viewer():
 
 
 def _get_skininfo(zip_url):
-    if not ALWAYS_REGEN:
+    if not DEVELOPMENT_MODE:
         skininfo_path = _get_cache_filename(zip_url, 'all', 'skininfo.json')
         if os.path.exists(skininfo_path):
             with open(skininfo_path, 'rt') as f:

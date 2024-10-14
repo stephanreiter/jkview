@@ -2,16 +2,16 @@ import math
 import transformations as tf
 import io
 
-from PIL import ImageFilter
-
 import cmp
-import gob
 import jkl
 import mat
 import threedo
 
 
-def _make_material_from_frames(frames, make_lowres):
+FALLBACK_MATERIAL_FULL_NAME = b'mat/dflt.mat'
+
+
+def _make_material_from_frames(frames):
     # find the average color of the pixels
     if frames[0].width > 1 or frames[0].height > 1:
         pixel = frames[0].resize((1, 1))
@@ -26,24 +26,12 @@ def _make_material_from_frames(frames, make_lowres):
         image = output.getvalue()
         dims = (frames[0].width, frames[0].height)
 
-    mat = {'color': color, 'image': image, 'mime': mime, 'dims': dims}
-
-    if make_lowres:
-        with io.BytesIO() as output:
-            lowres_frame = frames[0].filter(ImageFilter.GaussianBlur(16))
-            lowres_frame.save(output, format='PNG')
-            mat['lowres'] = output.getvalue()
-
-    return mat
-
-
-FALLBACK_MATERIAL_FULL_NAME = b'mat/dflt.mat'
+    return {'color': color, 'image': image, 'mime': mime, 'dims': dims}
 
 
 class MaterialCache:
-    def __init__(self, vfs, official):
+    def __init__(self, vfs):
         self.vfs = vfs
-        self.official = official
         self.materials = []
         self.cache = {}
         self.colormap_name = ''
@@ -66,9 +54,7 @@ class MaterialCache:
                     except ValueError:
                         frames = mat.load_frames_from_bytes(
                             self.vfs.read(FALLBACK_MATERIAL_FULL_NAME), colormap=self.colormap)
-                    is_official = self.vfs.src(
-                        material_full_name) in self.official
-                    material = _make_material_from_frames(frames, is_official)
+                    material = _make_material_from_frames(frames)
                     material['name'] = material_full_name
                 except KeyError:
                     pass
@@ -175,124 +161,105 @@ def _instantiate_model(model, pos, rot, sector, lights, texcache):
     return surfaces
 
 
-def _load_level(jkl_name, gobs, official=[]):
-    with gob.try_open_gob_files(gobs) as vfs:
-        surfaces = []
-        sky_surfaces = []
+def load_level(jkl_name, vfs):
+    surfaces = []
+    sky_surfaces = []
 
-        level = jkl.read_from_bytes(vfs.read(jkl_name))
+    level = jkl.read_from_bytes(vfs.read(jkl_name))
 
-        # in a previous version we used the per sector colormap for loading materials
-        # this made some maps appear with pink textures, e.g. Massassi 3092 and 3051 -
-        # thanks ECHOMAN for pointing this out!
+    # in a previous version we used the per sector colormap for loading materials
+    # this made some maps appear with pink textures, e.g. Massassi 3092 and 3051 -
+    # thanks ECHOMAN for pointing this out!
 
-        # jdmclark explained that: "Jedi Knight handles colormaps differently depending
-        # on whether it's using the software or hardware renderer. In software mode,
-        # the game applies the colormap from the camera's containing sector to the whole
-        # screen (hardware palettized 8-bit). With the hardware renderer, the game always
-        # uses colormap 0 (called the master colormap) to convert textures to 16-bit as
-        # they're loaded. The hardware renderer doesn't totally ignore the sector
-        # colormaps - it uses some tint fields from their headers for special effects -
-        # but the palette part is always ignored.
+    # jdmclark explained that: "Jedi Knight handles colormaps differently depending
+    # on whether it's using the software or hardware renderer. In software mode,
+    # the game applies the colormap from the camera's containing sector to the whole
+    # screen (hardware palettized 8-bit). With the hardware renderer, the game always
+    # uses colormap 0 (called the master colormap) to convert textures to 16-bit as
+    # they're loaded. The hardware renderer doesn't totally ignore the sector
+    # colormaps - it uses some tint fields from their headers for special effects -
+    # but the palette part is always ignored.
 
-        # so let's just use the master colormap for all sectors
-        texcache = MaterialCache(vfs, official)
-        try:
-            master_colormap_name = level.colormaps[0]
-            master_colormap = cmp.read_from_bytes(
-                vfs.read(b'misc/cmp/' + master_colormap_name))
-            texcache.set_current_colormap(
-                master_colormap_name, master_colormap)
-        except:
-            pass
+    # so let's just use the master colormap for all sectors
+    texcache = MaterialCache(vfs)
+    try:
+        master_colormap_name = level.colormaps[0]
+        master_colormap = cmp.read_from_bytes(
+            vfs.read(b'misc/cmp/' + master_colormap_name))
+        texcache.set_current_colormap(master_colormap_name, master_colormap)
+    except:
+        pass  # failed to load level master colormap
 
-        # load sectors
-        for _, sector in level.sectors.items():
-            for s in range(sector['surfaces'][0], sector['surfaces'][1]):
-                surface = level.surfaces[s]
-                if surface['geo'] != 4:
-                    continue
+    # load sectors
+    for _, sector in level.sectors.items():
+        for s in range(sector['surfaces'][0], sector['surfaces'][1]):
+            surface = level.surfaces[s]
+            if surface['geo'] != 4:
+                continue
 
-                try:
-                    material_name = level.materials[surface['material']]
-                except:
-                    continue  # if there's no material, don't render the surface
-
-                vertices = [_add_light(v, sector.get('extra_light', 0))
-                            for v in surface['vertices']]
-                surface_data = {
-                    'vertices': vertices,
-                    'material': texcache.load(material_name),
-                    'translucent': surface['translucent']
-                }
-
-                if surface['surfflags'] & 0x600:  # horizon or ceiling
-                    sky_surfaces.append(surface_data)  # horizon
-                else:
-                    surfaces.append(surface_data)
-
-        # load models and instantiate them in the scene
-        models = {}
-        model_surfaces = []
-        for instance in level.models:
-            filename = instance['model']
-            if not filename in models:
-                full_filename = b'3do/' + filename
-                try:
-                    models[filename] = threedo.read_from_bytes(
-                        vfs.read(full_filename))
-                except:
-                    continue  # model not found
-
-            sector = level.sectors[instance['sector']]
-            model = _instantiate_model(
-                models[filename], instance['pos'], instance['rot'], sector, level.lights, texcache)
-            model_surfaces.extend(model)
-
-        return surfaces, model_surfaces, sky_surfaces, texcache.materials, level.spawn_points
-
-
-def _load_models(model_paths, gobs, official=[]):
-    with gob.try_open_gob_files(gobs) as vfs:
-        models = []
-
-        texcache = MaterialCache(vfs, official)
-        try:
-            master_colormap_name = b'dflt.cmp'
-            master_colormap = cmp.read_from_bytes(
-                vfs.read(b'misc/cmp/' + master_colormap_name))
-            texcache.set_current_colormap(
-                master_colormap_name, master_colormap)
-        except:
-            pass
-
-        pos = (0, 0, 0)
-        rot = (0, 0, 0)
-        sector = None
-        lights = []
-        for filename in model_paths:
             try:
-                full_filename = b'3do/' + filename
-                model_threedo = threedo.read_from_bytes(
-                    vfs.read(full_filename))
-                models.append(_instantiate_model(
-                    model_threedo, pos, rot, sector, lights, texcache))
+                material_name = level.materials[surface['material']]
             except:
-                models.append(None)  # model not found
+                continue  # if there's no material, don't render the surface
 
-        return models, texcache.materials
+            vertices = [_add_light(v, sector.get('extra_light', 0))
+                        for v in surface['vertices']]
+            surface_data = {
+                'vertices': vertices,
+                'material': texcache.load(material_name),
+                'translucent': surface['translucent']
+            }
+
+            if surface['surfflags'] & 0x600:  # horizon or ceiling
+                sky_surfaces.append(surface_data)  # horizon
+            else:
+                surfaces.append(surface_data)
+
+    # load models and instantiate them in the scene
+    models = {}
+    model_surfaces = []
+    for instance in level.models:
+        filename = instance['model']
+        if not filename in models:
+            full_filename = b'3do/' + filename
+            try:
+                models[filename] = threedo.read_from_bytes(
+                    vfs.read(full_filename))
+            except:
+                continue  # model not found
+
+        sector = level.sectors[instance['sector']]
+        model = _instantiate_model(
+            models[filename], instance['pos'], instance['rot'], sector, level.lights, texcache)
+        model_surfaces.extend(model)
+
+    return surfaces, model_surfaces, sky_surfaces, texcache.materials, level.spawn_points
 
 
-OFFICIAL = ['Res1hi.gob', 'Res2.gob', 'JKMRES.GOO']
+def load_models(model_paths, vfs, throw_on_error=False):
+    models = []
 
+    texcache = MaterialCache(vfs)
+    try:
+        master_colormap_name = b'dflt.cmp'
+        master_colormap = cmp.read_from_bytes(
+            vfs.read(b'misc/cmp/' + master_colormap_name))
+        texcache.set_current_colormap(master_colormap_name, master_colormap)
+    except:
+        pass  # failed to load default colormap
 
-def load_level_from_gob(levelname, gob_path):
-    # Order matters: let level specific gobs override official resources.
-    # This is relevant, for example, for the Blue Rain level (375): it has its own 3do/tree.3do.
-    gobs = OFFICIAL + [gob_path]
-    return _load_level(b'jkl/' + levelname, gobs=gobs, official=OFFICIAL)
+    pos = (0, 0, 0)
+    rot = (0, 0, 0)
+    sector = None
+    lights = []
+    for filename in model_paths:
+        try:
+            full_filename = b'3do/' + filename
+            model_threedo = threedo.read_from_bytes(vfs.read(full_filename))
+            models.append(_instantiate_model(
+                model_threedo, pos, rot, sector, lights, texcache))
+        except:
+            if throw_on_error: raise
+            models.append(None)  # model not found
 
-
-def load_models_from_gob(model_paths, gob_path):
-    gobs = OFFICIAL + [gob_path]
-    return _load_models(model_paths, gobs=gobs, official=OFFICIAL)
+    return models, texcache.materials
