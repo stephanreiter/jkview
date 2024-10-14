@@ -258,7 +258,10 @@
             geometry.setIndex(allIndices);
             geometry.computeBoundingBox();
 
-            if (mesh) scene.remove(mesh);
+            if (mesh) {
+                scene.remove(mesh);
+                mesh.geometry.dispose();
+            }
             mesh = new THREE.Mesh(geometry, materialArray);
             scene.add(mesh);
 
