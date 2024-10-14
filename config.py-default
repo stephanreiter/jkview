@@ -3,9 +3,6 @@
 # and change the values to suit your installation.
 #
 
-# enable CENSOR_ALWAYS to avoid extraction of full-resolution assets on server
-CENSOR_ALWAYS = False
-
 # regenerate level data on every request and don't swallow errors
 # FOR DEVELOPMENT ONLY!
 DEVELOPMENT_MODE = False
