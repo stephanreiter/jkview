@@ -23,8 +23,8 @@ it: Make a copy of `config.py-default` and name it `config.py`. Comments in the 
 values you can set there.
 
 Finally, start the server using the script `start.sh`. Then navigate using a web browser to, for
-example, `http://127.0.0.1:5000/level/?url=https://www.massassi.net/media/levels/files/jkmp/baronnight.zip`.
+example, `http://127.0.0.1:5000/level/?url=https://www.massassi.net/media/levels/files/jkmp/baronnight.zip`
+to view a level or `http://127.0.0.1:8080/skins/?url=https://www.massassi.net/media/levels/files/jkmod/clones.zip`
+to view skins.
 The `url` in the address is expected to be a ZIP archive of a map as hosted on the Massassi Temple.
 See https://www.massassi.net/levels/ for all the hosted goodness there.
-Note that if you own the game, you can add `&ownsgame=1`to the URL to see textures from the game files
-in high resolution.
