@@ -31,10 +31,9 @@ def read_from_file(f):
             if name_comment_start == -1:
                 name = "unknown"
             else:
-                name = line[name_comment_start + 1:].strip()
+                name = line[name_comment_start + 1:]
                 name = name.decode(errors='ignore')
-                if len(name) >= 2 and name[0] == '"' and name[-1] == '"':
-                    name = name[1:-1]
+                name = name.strip().strip('#"').strip()
             models.append((threedo, name))
 
     return ModelsFile(models)

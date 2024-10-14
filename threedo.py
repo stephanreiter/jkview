@@ -9,13 +9,15 @@ FLOAT_FRAGMENT2 = r'-?\d*(?:\.\d+)?(?:[eE][-+]?\d+)?'
 
 VERTEX_XYZI_RE = re.compile(
     fr'(\d+):\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})'.encode())
-VERTEX_UV_RE = re.compile(fr'(\d+):\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})'.encode())
+VERTEX_UV_RE = re.compile(
+    fr'(\d+):\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})'.encode())
 NORMAL_RE = re.compile(
     fr'(\d+):\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})'.encode())
 FACE_RE = re.compile(
     fr'(\d+):\s+(-?\d+?)\s+(0x[0-9a-fA-F]+)\s+(-?\d+?)\s+(-?\d+?)\s+(-?\d+?)\s+({FLOAT_FRAGMENT2})\s+(\d+)'.encode())
 
-NODE_RE = re.compile(fr'(\d+):\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+(\D+)'.encode())
+NODE_RE = re.compile(
+    fr'(\d+):\s+(0x[0-9a-fA-F]+)\s+(0x[0-9a-fA-F]+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+(-?\d+)\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+({FLOAT_FRAGMENT2})\s+(\D+)'.encode())
 
 
 def _get_face_rest_re(nverts):
@@ -126,6 +128,8 @@ class ThreedoFile:
 
             if target == 'xyzi':
                 match = VERTEX_XYZI_RE.match(line)
+                if not match:
+                    continue
                 key = int(match.group(1))
                 x = float(match.group(2))
                 y = float(match.group(3))
@@ -134,12 +138,16 @@ class ThreedoFile:
                 vdata[target][key] = (x, y, z, i)
             elif target == 'uv':
                 match = VERTEX_UV_RE.match(line)
+                if not match:
+                    continue
                 key = int(match.group(1))
                 u = float(match.group(2))
                 v = float(match.group(3))
                 vdata[target][key] = (u, v)
             elif target == 'norm':
                 match = NORMAL_RE.match(line)
+                if not match:
+                    continue
                 key = int(match.group(1))
                 x = float(match.group(2))
                 y = float(match.group(3))
@@ -147,6 +155,8 @@ class ThreedoFile:
                 vdata[target][key] = (x, y, z)
             elif target == 'faces':
                 match = FACE_RE.match(line)
+                if not match:
+                    continue
                 key = int(match.group(1))
                 mat = int(match.group(2))
                 ftype = int(match.group(3)[2:], 16)
@@ -159,6 +169,8 @@ class ThreedoFile:
                 rest_re = _get_face_rest_re(nverts)
                 rest = line[match.end(8):]
                 match = rest_re.match(rest)
+                if not match:
+                    continue
 
                 twosided = (ftype & 0x1) != 0
                 translucent = (ftype & 0x2) != 0
@@ -171,7 +183,8 @@ class ThreedoFile:
                     xyzi = vdata['xyzi'][xyzi_idx]
                     pos = xyzi[0:3]
                     norm = vdata['norm'][xyzi_idx]
-                    uv = vdata['uv'][uv_idx] if geo == 4 else (0, 0)
+                    # check for valid UV index to load skin https://www.massassi.net/levels/files/564.shtml
+                    uv = vdata['uv'][uv_idx] if geo == 4 and uv_idx in vdata['uv'] else (0, 0)
                     diffuse = [extra_light + xyzi[3]] * 3
                     vertices.append([pos, uv, diffuse, norm])
 

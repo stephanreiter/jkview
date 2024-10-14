@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import requests
 import shutil
 import tempfile
@@ -75,7 +76,7 @@ def _extract_gob(zip_url):
         with zipfile.ZipFile(zip_path) as zip_file:
             # locate the first gob file and write its contents atomically to gob_path
             # note: MotS used goo as the extension: we'll also take that if found!
-            # TODO: deal with multiple gobs in zip, e.g. Rebel Agent (level 1900)
+            # TODO: deal with multiple gobs in zip, e.g. Rogue Squadron mod (file 696)
             for info in zip_file.infolist():
                 # case insensitive extension check:
                 filename = info.filename.lower()
@@ -162,7 +163,7 @@ def _extract_skin(zip_url):
 
     skin_info = {'version': VERSION, 'skins': []}
     try:
-        with gob.open_gob_files(loader.OFFICIAL + [gob_path]) as vfs:
+        with gob.try_open_gob_files(loader.OFFICIAL + [gob_path]) as vfs:
             info = models.read_from_bytes(vfs.read(b'misc/models.dat'))
             # Add single player models for MotS
             info.models.append((b'kk.3do', 'Kyle Katarn'))
@@ -170,6 +171,18 @@ def _extract_skin(zip_url):
         with gob.open_gob_file(gob_path) as vfs:
             model_paths_and_names = [
                 m for m in info.models if vfs.contains(b'3do/' + m[0])]
+            if len(model_paths_and_names) == 0:
+                # try to discover models in the gob
+                model_filename_pattern = re.compile(b'3do/(.+)\.3do')
+                for file in vfs.ls():
+                    match = model_filename_pattern.match(file)
+                    if match:
+                        filename = match.group(1) + b'.3do'
+                        model_paths_and_names.append((filename, filename.decode()))
+            if len(model_paths_and_names) == 0:
+                # probably just reskins Kyle
+                model_paths_and_names.append((b'ky.3do', 'Kyle Katarn'))
+
         model_paths = [m[0] for m in model_paths_and_names]
         surfaces, materials = loader.load_models_from_gob(
             model_paths, gob_path)
