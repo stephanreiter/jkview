@@ -115,33 +115,25 @@ def _extract_map(zip_url):
                             for v in surf['vertices']:
                                 v[1] = (v[1][0] * sclu, v[1][1] * sclv)
 
-                # write censored and uncensored material data to mat.js
-                censor_states = [True] if CENSOR_ALWAYS else [True, False]
-                for censor in censor_states:
-                    material_data = []
-                    for mat in materials:
-                        if mat:
-                            censored = censor and 'lowres' in mat
-                            material_imgkey = 'lowres' if censored else 'image'
-                            data = _encode_image(mat[material_imgkey], mat['mime']) if (
-                                material_imgkey in mat) else ''
-                            material_data.append(
-                                {'data': data, 'name': mat['name'].decode()})
-                        else:
-                            material_data.append({'data': '', 'name': ''})
-
-                    matjs_filename = 'mat{0}.json'.format(
-                        '' if censor else '-full')
-                    _write_cache_atomically(zip_url, episode_id, matjs_filename,
-                                            'wt', json.dumps(material_data))
+                # write material data to mat.js
+                material_data = []
+                for mat in materials:
+                    if mat:
+                        data = _encode_image(mat['image'], mat['mime'])
+                        material_data.append(
+                            {'data': data, 'name': mat['name'].decode()})
+                    else:
+                        material_data.append({'data': '', 'name': ''})
+                _write_cache_atomically(
+                    zip_url, episode_id, 'mat.json', 'wt', json.dumps(material_data))
 
                 # assemble map data
                 material_colors = [_encode_color(
                     mat['color']) if mat else '#000000' for mat in materials]
                 map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces, 'sky_surfaces': sky_surfaces,
                             'material_colors': material_colors, 'spawn_points': spawn_points}
-                _write_cache_atomically(zip_url, episode_id, 'map.json',
-                                        'wt', json.dumps(map_data))
+                _write_cache_atomically(
+                    zip_url, episode_id, 'map.json', 'wt', json.dumps(map_data))
 
                 if levelname.endswith(b'.jkl'):
                     levelname = levelname[:-4]  # drop .jkl suffix
@@ -178,7 +170,8 @@ def _extract_skin(zip_url):
                     match = model_filename_pattern.match(file)
                     if match:
                         filename = match.group(1) + b'.3do'
-                        model_paths_and_names.append((filename, filename.decode()))
+                        model_paths_and_names.append(
+                            (filename, filename.decode()))
             if len(model_paths_and_names) == 0:
                 # probably just reskins Kyle
                 model_paths_and_names.append((b'ky.3do', 'Kyle Katarn'))
@@ -262,9 +255,7 @@ def root_level_material_data():
     zip_url = _get_zip_url()
     episode_id = int(request.args.get('episode', 0))
     cache_key = _get_cache_key(zip_url)
-    censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
-    matjs_filename = 'mat{0}.json'.format('' if censor else '-full')
-    return send_from_directory('cache', '{0}-{1}-{2}'.format(cache_key, episode_id, matjs_filename))
+    return send_from_directory('cache', '{0}-{1}-{2}'.format(cache_key, episode_id, 'mat.json'))
 
 
 def _get_mapinfo(zip_url):
@@ -285,23 +276,14 @@ def root_level_viewer():
     episode_id = int(request.args.get('episode', 0))
     map_info = _get_mapinfo(zip_url)
 
-    censor = CENSOR_ALWAYS or request.args.get('ownsgame') != '1'
-
     mapjs_url = 'map.json?version={0}&url={1}&episode={2}'.format(
         VERSION, zip_url, episode_id)
-    if not censor:
-        mapjs_url += '&ownsgame=1'
-
     matjs_url = 'mat.json?version={0}&url={1}&episode={2}'.format(
         VERSION, zip_url, episode_id)
-    if not censor:
-        matjs_url += '&ownsgame=1'
 
     maps = []
     for i, map in enumerate(map_info['maps']):
         episode_url = '?url={0}&episode={1}'.format(zip_url, i)
-        if not censor:
-            episode_url += '&ownsgame=1'
         maps.append([map, episode_url])
 
     return render_template('viewer.html', title=map_info['title'], maps=json.dumps(maps),

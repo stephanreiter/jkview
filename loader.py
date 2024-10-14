@@ -2,8 +2,6 @@ import math
 import transformations as tf
 import io
 
-from PIL import ImageFilter
-
 import cmp
 import gob
 import jkl
@@ -11,7 +9,10 @@ import mat
 import threedo
 
 
-def _make_material_from_frames(frames, make_lowres):
+FALLBACK_MATERIAL_FULL_NAME = b'mat/dflt.mat'
+
+
+def _make_material_from_frames(frames):
     # find the average color of the pixels
     if frames[0].width > 1 or frames[0].height > 1:
         pixel = frames[0].resize((1, 1))
@@ -26,24 +27,12 @@ def _make_material_from_frames(frames, make_lowres):
         image = output.getvalue()
         dims = (frames[0].width, frames[0].height)
 
-    mat = {'color': color, 'image': image, 'mime': mime, 'dims': dims}
-
-    if make_lowres:
-        with io.BytesIO() as output:
-            lowres_frame = frames[0].filter(ImageFilter.GaussianBlur(16))
-            lowres_frame.save(output, format='PNG')
-            mat['lowres'] = output.getvalue()
-
-    return mat
-
-
-FALLBACK_MATERIAL_FULL_NAME = b'mat/dflt.mat'
+    return {'color': color, 'image': image, 'mime': mime, 'dims': dims}
 
 
 class MaterialCache:
-    def __init__(self, vfs, official):
+    def __init__(self, vfs):
         self.vfs = vfs
-        self.official = official
         self.materials = []
         self.cache = {}
         self.colormap_name = ''
@@ -66,9 +55,7 @@ class MaterialCache:
                     except ValueError:
                         frames = mat.load_frames_from_bytes(
                             self.vfs.read(FALLBACK_MATERIAL_FULL_NAME), colormap=self.colormap)
-                    is_official = self.vfs.src(
-                        material_full_name) in self.official
-                    material = _make_material_from_frames(frames, is_official)
+                    material = _make_material_from_frames(frames)
                     material['name'] = material_full_name
                 except KeyError:
                     pass
@@ -175,7 +162,7 @@ def _instantiate_model(model, pos, rot, sector, lights, texcache):
     return surfaces
 
 
-def _load_level(jkl_name, gobs, official=[]):
+def _load_level(jkl_name, gobs):
     with gob.try_open_gob_files(gobs) as vfs:
         surfaces = []
         sky_surfaces = []
@@ -196,7 +183,7 @@ def _load_level(jkl_name, gobs, official=[]):
         # but the palette part is always ignored.
 
         # so let's just use the master colormap for all sectors
-        texcache = MaterialCache(vfs, official)
+        texcache = MaterialCache(vfs)
         try:
             master_colormap_name = level.colormaps[0]
             master_colormap = cmp.read_from_bytes(
@@ -252,11 +239,11 @@ def _load_level(jkl_name, gobs, official=[]):
         return surfaces, model_surfaces, sky_surfaces, texcache.materials, level.spawn_points
 
 
-def _load_models(model_paths, gobs, official=[]):
+def _load_models(model_paths, gobs):
     with gob.try_open_gob_files(gobs) as vfs:
         models = []
 
-        texcache = MaterialCache(vfs, official)
+        texcache = MaterialCache(vfs)
         try:
             master_colormap_name = b'dflt.cmp'
             master_colormap = cmp.read_from_bytes(
@@ -290,9 +277,9 @@ def load_level_from_gob(levelname, gob_path):
     # Order matters: let level specific gobs override official resources.
     # This is relevant, for example, for the Blue Rain level (375): it has its own 3do/tree.3do.
     gobs = OFFICIAL + [gob_path]
-    return _load_level(b'jkl/' + levelname, gobs=gobs, official=OFFICIAL)
+    return _load_level(b'jkl/' + levelname, gobs=gobs)
 
 
 def load_models_from_gob(model_paths, gob_path):
     gobs = OFFICIAL + [gob_path]
-    return _load_models(model_paths, gobs=gobs, official=OFFICIAL)
+    return _load_models(model_paths, gobs=gobs)
