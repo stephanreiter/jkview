@@ -117,6 +117,57 @@ class VirtualFileSystem:
         return self.multi_gob.read(name)
 
 
+class ZipGob:
+    def __init__(self, borrowed_zip_handle, file_infos):
+        self.zip_handle = borrowed_zip_handle
+        self.file_infos = file_infos
+
+    def ls(self):
+        return self.file_infos.keys()
+
+    def contains(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        return name in self.file_infos
+
+    def read(self, name):
+        name = name.lower()  # CASE INSENSITIVE
+        info = self.file_infos[name]
+        with self.zip_handle.open(info) as f:
+            return f.read()
+
+
+def _try_build_virtual_gob(zip_file):
+    file_infos = {}
+    for info in zip_file.infolist():
+        if info.is_dir():
+            continue
+        filename = info.filename.lower()
+        print(filename)
+        path, file = os.path.split(filename)
+        # sometimes the contents are within a folder in the zip
+        # detect that and strip the folder's name
+        if path and not any([path.startswith(p) for p in ['3do/', 'mat/', 'jkl/', 'cmp/']]):
+            _, rest = os.path.split(path)
+            path = rest
+        if not path:
+            if file == 'models.dat':
+                path = 'misc'
+            else:
+                _, ext = os.path.splitext(file)
+                if ext == '.3do':
+                    path = '3do'
+                elif ext == '.mat':
+                    path = 'mat'
+                elif ext == '.jkl':
+                    path = 'jkl'
+                elif ext == '.cmp':
+                    path = 'cmp'
+        if path:
+            filename = os.path.join(path, file)
+            file_infos[filename.encode()] = info
+    return ZipGob(zip_file, file_infos) if file_infos else None
+
+
 def _open_gobs_in_zip(zip_filename):
     zip_file = zipfile.ZipFile(zip_filename)
     try:
@@ -125,12 +176,21 @@ def _open_gobs_in_zip(zip_filename):
             # locate gob and goo (MotS) files and open them
             gobs = []
             for info in zip_file.infolist():
+                if info.is_dir():
+                    continue
                 # case insensitive extension check:
                 filename = info.filename.lower()
                 if filename.endswith('.gob') or filename.endswith('.goo'):
                     gob_file_handle = zip_file.open(info)
                     open_files.append(gob_file_handle)
                     gobs.append(GobFile(gob_file_handle))
+
+            # some archives do not contains gobs, but rather files directly
+            # detect such archives and allow access to the files via a virtual gob
+            virtual_gob = _try_build_virtual_gob(zip_file)
+            if virtual_gob:
+                gobs.append(virtual_gob)
+
             if len(gobs) == 0:
                 raise Exception("No GOBs in archive!")
             return zip_file, gobs

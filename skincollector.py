@@ -3,7 +3,7 @@ import sys
 import urllib.request
 
 DOWNLOAD_LINK_RE = re.compile(
-    br'<meta http-equiv="Refresh" content="2; URL=(/media/levels/files/jkmod/.+.zip)">')
+    br'<meta http-equiv="Refresh" content="2; URL=(/media/levels/files/(jkmod|motsmod)/.+.(zip|ZIP))">')
 
 def _find_download_link(trampoline_html):
     match = DOWNLOAD_LINK_RE.search(trampoline_html)
