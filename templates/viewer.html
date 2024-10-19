@@ -148,6 +148,7 @@
 
     <script type="module">
         import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         var isTouchDevice = (('ontouchstart' in window)
@@ -172,9 +173,10 @@
             }
         }
 
-        var camera, controls, fpsControls, scene, renderer, mesh, skyMesh, materialArray;
-        var skyMaterialsMap, translucentMaterialsMap;
-        var spawnPoints, nextSpawnPoint = 0;
+        var spawnPoints = JSON.parse({{ spawn_points | tojson | safe }});
+        var nextSpawnPoint = 0;
+
+        var camera, controls, fpsControls, scene, renderer, mesh, skyMesh;
         var fpsControlsScale = 0.0001;
         var infos = ['touchinfo', 'touchinfofps', 'mouseinfo', 'mouseinfofps'];
         var lastInfoFadeTimeout;
@@ -230,9 +232,11 @@
 
         function toggleWireframe() {
             wireframe = !wireframe;
-            for (var i = 0; i < materialArray.length; ++i) {
-                materialArray[i].wireframe = wireframe;
-            }
+            scene.traverse(function (object) {
+                if (object instanceof THREE.Mesh) {
+                    object.material.wireframe = wireframe;
+                }
+            });
             animate();
         }
 
@@ -252,22 +256,16 @@
             return 0.3 + frac * 0.7;
         }
 
-        function onMapLoadProgress(ev) {
-            if (ev.lengthComputable) {
-                progress.animate(mapLoadProgress(ev.loaded / ev.total));
-            }
-        }
-
         function showWholeMap() {
             fpsControls.enabled = false;
-            var bb = mesh.geometry.boundingBox;
+            var bb = new THREE.Box3().setFromObject(mesh);
             var center = new THREE.Vector3();
             bb.getCenter(center);
             camera.position.copy(bb.max);
             controls.target.copy(center);
             controls.enabled = true;
             controls.update();
-            scene.remove(skyMesh);
+            skyMesh.visible = false;
             clearTarget();
             animate();
         }
@@ -285,9 +283,7 @@
             fpsControls.target.copy(new THREE.Vector3(pos[0] + dir[0], pos[1] + dir[1], pos[2] + offsetZ + dir[2]));
             fpsControls.enabled = true;
             fpsControls.update();
-            if (!scene.getObjectByName('sky')) {
-                scene.add(skyMesh);
-            }
+            skyMesh.visible = true;
             clearTarget();
             animate();
         }
@@ -298,109 +294,45 @@
         init();
 
         progress.animate(mapLoadProgress(0));
-        loadJSON('{{ map_js|safe }}', function (mapdata) {
-            loadMap(mapdata);
-            // no progress for textures, we'll start using them when available
-            loadJSON('{{ mat_js|safe }}', function (matdata) {
-                loadMaterials(matdata);
-            });
-        }, onMapLoadProgress);
-
-        function loadMap(mapdata) {
-            if (typeof mapdata == 'undefined') {
+        const loader = new GLTFLoader();
+        loader.load('{{ map_glb|safe }}',
+            function (gltf) {
+                loadMap(gltf);
+            },
+            (ev) => {
+                if (ev.lengthComputable) {
+                    progress.animate(mapLoadProgress(ev.loaded / ev.total));
+                }
+            },
+            (error) => {
                 progress.setText("Loading failed.");
                 progress.animate(1);
-                console.error("Failed to retrieve map!");
-                return;
+                console.log(error);
             }
+        );
 
-            spawnPoints = mapdata['spawn_points'];
+        function loadMap(gltf) {
+            mesh = gltf.scene.children[0];
+            skyMesh = gltf.scene.children[1];
+            skyMesh.visible = false;
 
-            materialArray = [];
-            var materialColors = mapdata['material_colors'];
-            for (var i = 0; i < materialColors.length; ++i) {
-                materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[i], vertexColors: true }));
-            }
-            skyMaterialsMap = new Map();
-            translucentMaterialsMap = new Map();
-
-            var pos = []
-            var uv = [];
-            var diffuse = [];
-            var materialIndices = new Map();
-            var addSurfaces = function (surfaces, isSky = false) {
-                for (var i = 0; i < surfaces.length; ++i) {
-                    var verts = surfaces[i]['vertices'];
-                    var v0 = pos.length / 3;
-                    for (var v = 0; v < verts.length; ++v) {
-                        pos.push(...verts[v][0]);
-                        uv.push(...verts[v][1]);
-                        if (isSky) {
-                            diffuse.push(1, 1, 1);
-                        } else {
-                            diffuse.push(...verts[v][2]);
-                        }
-                    }
-
-                    var material = surfaces[i]['material'];
-                    if (isSky) {
-                        if (!skyMaterialsMap.has(material)) {
-                            var remapped = materialArray.length;
-                            materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[material] }));
-                            skyMaterialsMap.set(material, remapped)
-                        }
-                        material = skyMaterialsMap.get(material);
-                    }
-                    else if (surfaces[i]['translucent']) {
-                        if (!translucentMaterialsMap.has(material)) {
-                            var remapped = materialArray.length;
-                            materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[material] }));
-                            translucentMaterialsMap.set(material, remapped)
-                        }
-                        material = translucentMaterialsMap.get(material);
-                    }
-
-                    if (!materialIndices.has(material)) {
-                        materialIndices.set(material, []);
-                    }
-                    var indices = materialIndices.get(material);
-                    for (var v = 2; v < verts.length; ++v) {
-                        indices.push(v0, v0 + v - 1, v0 + v);
-                    }
+            var skyVertexShader = document.getElementById('skyvs').textContent;
+            var skyFragmentShader = document.getElementById('skyfs').textContent;
+            skyMesh.traverse(function (object) {
+                if (object instanceof THREE.Mesh) {
+                    var tex = object.material.map;
+                    object.material = new THREE.ShaderMaterial({
+                        vertexShader: skyVertexShader,
+                        fragmentShader: skyFragmentShader,
+                        uniforms: {
+                            u_texture: { type: 't', value: tex },
+                            u_inverseProjectionViewMatrix: { value: inverseProjectionViewMatrix }
+                        },
+                    });
                 }
-            }
+            });
 
-            addSurfaces(mapdata['surfaces']);
-            addSurfaces(mapdata['model_surfaces']);
-
-            function createGeometry() {
-                var geometry = new THREE.BufferGeometry();
-                geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-                geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
-                geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(diffuse), 3));
-                var allIndices = [];
-                materialIndices.forEach((indices, material) => {
-                    geometry.addGroup(allIndices.length, indices.length, material);
-                    allIndices.push(...indices);
-                });
-                geometry.setIndex(allIndices);
-                geometry.computeBoundingBox();
-                return geometry;
-            }
-
-            // create a mesh using the geometry
-            mesh = new THREE.Mesh(createGeometry(), materialArray);
-            scene.add(mesh);
-
-            // reset and create a separate mesh for the sky
-            // don't add it yet - we want it only when in first-person mode
-            pos = []
-            uv = [];
-            diffuse = [];
-            materialIndices = new Map();
-            addSurfaces(mapdata['sky_surfaces'], true);
-            skyMesh = new THREE.Mesh(createGeometry(), materialArray);
-            skyMesh.name = 'sky';
+            scene.add(gltf.scene);
 
             showWholeMap();
 
@@ -429,77 +361,6 @@
                     callback(...args);
                 }, timeout);
             };
-        }
-
-        function loadMaterials(matdata) {
-            if (typeof matdata == 'undefined') {
-                console.error("Failed to retrieve materials!");
-                return;
-            }
-
-            var loader = new THREE.TextureLoader();
-            var debouncedAnimate = debounce(animate, 100);
-            var skyVertexShader = document.getElementById('skyvs').textContent;
-            var skyFragmentShader = document.getElementById('skyfs').textContent;
-            for (var i = 0; i < matdata.length; ++i) {
-                if (matdata[i] != '') {
-                    var onLoaded = function (mats, skyMatsMap, translucentMatsMap, idx) {
-                        return function (tex) {
-                            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-                            tex.colorSpace = THREE.SRGBColorSpace;
-                            mats[idx] = new THREE.MeshBasicMaterial({
-                                map: tex,
-                                alphaTest: 1.0 / 255.0,
-                                vertexColors: true
-                            });
-
-                            if (skyMatsMap.has(idx)) {
-                                var remapped = skyMatsMap.get(idx);
-                                mats[remapped] = new THREE.ShaderMaterial({
-                                    vertexShader: skyVertexShader,
-                                    fragmentShader: skyFragmentShader,
-                                    uniforms: {
-                                        u_texture: { type: 't', value: tex },
-                                        u_inverseProjectionViewMatrix: { value: inverseProjectionViewMatrix }
-                                    },
-                                });
-                            }
-                            if (translucentMatsMap.has(idx)) {
-                                var remapped = translucentMatsMap.get(idx);
-                                mats[remapped] = new THREE.MeshBasicMaterial({
-                                    map: tex,
-                                    alphaTest: 1.0 / 255.0,
-                                    vertexColors: true,
-                                    transparent: true,
-                                    opacity: 90.0 / 255.0
-                                });
-                            }
-
-                            debouncedAnimate();
-                        };
-                    }(materialArray, skyMaterialsMap, translucentMaterialsMap, i);
-                    loader.load(matdata[i]['data'], onLoaded);
-                }
-            }
-        }
-
-        function loadJSON(url, callback, progressCallback) {
-            var xobj = new XMLHttpRequest();
-            xobj.overrideMimeType("application/json");
-            xobj.open('GET', url, true);
-            xobj.onprogress = progressCallback;
-            xobj.onreadystatechange = function () {
-                if (xobj.readyState == 4) {
-                    if (xobj.status == 200) {
-                        callback(JSON.parse(xobj.responseText));
-                    }
-                    else {
-                        callback(undefined); // error case
-                    }
-                }
-            };
-            xobj.send();
-            return xobj;
         }
 
         function init() {
