@@ -105,6 +105,7 @@
 
     <script type="module">
         import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         var isTouchDevice = (('ontouchstart' in window)
@@ -126,7 +127,7 @@
             }
         }
 
-        var camera, controls, scene, renderer, skinsdata, mesh, materialArray;
+        var camera, controls, scene, renderer, skinsdata, mesh;
         var infos = ['touchinfo', 'mouseinfo'];
         var lastInfoFadeTimeout;
         var wireframe = false;
@@ -168,9 +169,11 @@
 
         function toggleWireframe() {
             wireframe = !wireframe;
-            for (var i = 0; i < materialArray.length; ++i) {
-                materialArray[i].wireframe = wireframe;
-            }
+            scene.traverse(function (object) {
+                if (object instanceof THREE.Mesh) {
+                    object.material.wireframe = wireframe;
+                }
+            });
             animate();
         }
 
@@ -190,14 +193,8 @@
             return 0.3 + frac * 0.7;
         }
 
-        function onSkinLoadProgress(ev) {
-            if (ev.lengthComputable) {
-                progress.animate(skinLoadProgress(ev.loaded / ev.total));
-            }
-        }
-
         function showWholeCharacter() {
-            var bb = mesh.geometry.boundingBox;
+            var bb = new THREE.Box3().setFromObject(mesh);
             var bs = new THREE.Sphere();
             bb.getBoundingSphere(bs);
             var center = new THREE.Vector3();
@@ -215,54 +212,28 @@
         init();
 
         progress.animate(skinLoadProgress(0));
-        loadJSON('{{ skins_js|safe }}', function (data) {
-            loadSkins(data);
-            // no progress for textures, we'll start using them when available
-            loadJSON('{{ mat_js|safe }}', function (matdata) {
-                loadMaterials(matdata);
-            });
-        }, onSkinLoadProgress);
+        const loader = new GLTFLoader();
+        loader.load('{{ skins_glb|safe }}',
+            function (gltf) {
+                loadSkins(gltf);
+            },
+            (ev) => {
+                if (ev.lengthComputable) {
+                    progress.animate(skinLoadProgress(ev.loaded / ev.total));
+                }
+            },
+            (error) => {
+                progress.setText("Loading failed.");
+                progress.animate(1);
+                console.log(error);
+            }
+        );
 
         function switchToSkin(idx) {
-            var surfaces = skinsdata['surfaces'][idx];
-
-            var pos = []
-            var uv = [];
-            var materialIndices = new Map();
-            for (var i = 0; i < surfaces.length; ++i) {
-                var verts = surfaces[i]['vertices'];
-                var v0 = pos.length / 3;
-                for (var v = 0; v < verts.length; ++v) {
-                    pos.push(...verts[v][0]);
-                    uv.push(...verts[v][1]);
-                }
-
-                var material = surfaces[i]['material'];
-                if (!materialIndices.has(material)) {
-                    materialIndices.set(material, []);
-                }
-                var indices = materialIndices.get(material);
-                for (var v = 2; v < verts.length; ++v) {
-                    indices.push(v0, v0 + v - 1, v0 + v);
-                }
-            }
-
-            var geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-            geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
-            var allIndices = [];
-            materialIndices.forEach((indices, material) => {
-                geometry.addGroup(allIndices.length, indices.length, material);
-                allIndices.push(...indices);
-            });
-            geometry.setIndex(allIndices);
-            geometry.computeBoundingBox();
-
             if (mesh) {
                 scene.remove(mesh);
-                mesh.geometry.dispose();
             }
-            mesh = new THREE.Mesh(geometry, materialArray);
+            mesh = skinsdata.scenes[idx];
             scene.add(mesh);
 
             var name = skins[idx];
@@ -271,21 +242,8 @@
             showControlsInfo();
         }
 
-        function loadSkins(data) {
-            if (typeof data == 'undefined' || data.surfaces.length == 0) {
-                progress.setText("Loading failed.");
-                progress.animate(1);
-                console.error("Failed to retrieve skins!");
-                return;
-            }
-
-            materialArray = [];
-            var materialColors = data['material_colors'];
-            for (var i = 0; i < materialColors.length; ++i) {
-                materialArray.push(new THREE.MeshBasicMaterial({ 'color': materialColors[i] }));
-            }
-
-            skinsdata = data;
+        function loadSkins(gltf) {
+            skinsdata = gltf;
             switchToSkin(0);
             showWholeCharacter();
 
@@ -312,51 +270,6 @@
                     callback(...args);
                 }, timeout);
             };
-        }
-
-        function loadMaterials(matdata) {
-            if (typeof matdata == 'undefined') {
-                console.error("Failed to retrieve materials!");
-                return;
-            }
-
-            var loader = new THREE.TextureLoader();
-            var debouncedAnimate = debounce(animate, 100);
-            for (var i = 0; i < matdata.length; ++i) {
-                if (matdata[i] != '') {
-                    var onLoaded = function (mats, idx) {
-                        return function (tex) {
-                            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-                            tex.colorSpace = THREE.SRGBColorSpace;
-                            mats[idx] = new THREE.MeshBasicMaterial({
-                                map: tex,
-                                alphaTest: 1.0 / 255.0,
-                            });
-                            debouncedAnimate();
-                        };
-                    }(materialArray, i);
-                    loader.load(matdata[i]['data'], onLoaded);
-                }
-            }
-        }
-
-        function loadJSON(url, callback, progressCallback) {
-            var xobj = new XMLHttpRequest();
-            xobj.overrideMimeType("application/json");
-            xobj.open('GET', url, true);
-            xobj.onprogress = progressCallback;
-            xobj.onreadystatechange = function () {
-                if (xobj.readyState == 4) {
-                    if (xobj.status == 200) {
-                        callback(JSON.parse(xobj.responseText));
-                    }
-                    else {
-                        callback(undefined); // error case
-                    }
-                }
-            };
-            xobj.send();
-            return xobj;
         }
 
         function init() {

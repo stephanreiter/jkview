@@ -7,9 +7,11 @@ import hashlib
 import io
 import json
 import os
+import pygltflib
 import re
 import requests
 import shutil
+import struct
 import tempfile
 import urllib.parse
 
@@ -72,6 +74,170 @@ def _fetch_zip(zip_url):
     return zip_path
 
 
+# divide vertex UVs by texture sizes
+def _normalize_uvs(surfaces, materials):
+    for surf in surfaces:
+        mat = materials[surf['material']]
+        if mat and 'dims' in mat:
+            sclu = 1.0 / mat['dims'][0]
+            sclv = 1.0 / mat['dims'][1]
+            for v in surf['vertices']:
+                v[1] = (v[1][0] * sclu, v[1][1] * sclv)
+
+
+def _make_materials_for_translucent_surfaces(surfaces, materials):
+    variants = {}
+    for surf in surfaces:
+        mat = surf['material']
+        if mat not in variants:
+            if surf['translucent']:
+                materials[mat]['translucent'] = True
+                variants[mat] = {'translucent': mat}
+            else:
+                variants[mat] = {'normal': mat}
+        else:
+            if surf['translucent']:
+                if 'translucent' not in variants[mat]:
+                    copy = materials[mat].copy()
+                    copy['translucent'] = True
+                    variants[mat]['translucent'] = len(materials)
+                    materials.append(copy)
+                surf['material'] = variants[mat]['translucent']
+            else:
+                if 'normal' not in variants[mat]:
+                    copy = materials[mat].copy()
+                    del copy['translucent']
+                    variants[mat]['normal'] = len(materials)
+                    materials.append(copy)
+                surf['material'] = variants[mat]['normal']
+
+
+def _add_materials_to_gltf(gltf, materials):
+    gltf.extensionsUsed.append('KHR_materials_unlit')
+    for mat in materials:
+        material = pygltflib.Material()
+        if mat and 'image' in mat:
+            buffer = pygltflib.Buffer(byteLength=len(mat['image']))
+            buffer.uri = 'data:application/octet-stream;base64,' + \
+                base64.b64encode(mat['image']).decode()
+            buffer_view = pygltflib.BufferView(buffer=len(
+                gltf.buffers), byteOffset=0, byteLength=buffer.byteLength)
+            image = pygltflib.Image(
+                mimeType=mat['mime'], bufferView=len(gltf.bufferViews))
+            texture = pygltflib.Texture(source=len(gltf.images))
+            material.pbrMetallicRoughness = pygltflib.PbrMetallicRoughness()
+            material.pbrMetallicRoughness.baseColorTexture = pygltflib.TextureInfo(
+                index=len(gltf.textures))
+            if 'translucent' in mat:
+                material.alphaMode = pygltflib.BLEND
+                material.pbrMetallicRoughness.baseColorFactor = [
+                    1.0, 1.0, 1.0, 90.0 / 255.0]
+                material.alphaCutoff = None
+            else:
+                material.alphaMode = pygltflib.MASK
+                material.alphaCutoff = 1.0 / 255.0
+            material.extensions['KHR_materials_unlit'] = {}
+            gltf.buffers.append(buffer)
+            gltf.bufferViews.append(buffer_view)
+            gltf.images.append(image)
+            gltf.textures.append(texture)
+        gltf.materials.append(material)
+
+
+def _add_vertices_to_gltf(gltf, *surface_sources, **kwargs):
+    material_to_surfaces = {}
+    skip_color = kwargs.get('skip_color', False)
+
+    vertex_data = bytearray()
+    total_vertex_count = 0
+    bounds = None
+    for surfaces in surface_sources:
+        for surf in surfaces:
+            for v in surf['vertices']:
+                if bounds is None:
+                    bounds = [v[0], v[0]]
+                else:
+                    bounds[0] = [min(bounds[0][i], v[0][i]) for i in range(3)]
+                    bounds[1] = [max(bounds[1][i], v[0][i]) for i in range(3)]
+
+                vertex_data.extend(struct.pack('fff', *v[0]))
+                vertex_data.extend(struct.pack('ff', v[1][0], -v[1][1]))  # flipY
+                if not skip_color:
+                    for i in range(3):
+                        vertex_data.extend(struct.pack(
+                            'f', max(0, min(1, v[2][i]))))
+
+            if not surf['material'] in material_to_surfaces:
+                material_to_surfaces[surf['material']] = []
+            material_to_surfaces[surf['material']].append(
+                (total_vertex_count, len(surf['vertices'])))
+            total_vertex_count += len(surf['vertices'])
+
+    vertex_data_buffer = pygltflib.Buffer(byteLength=len(vertex_data))
+    vertex_data_buffer.uri = 'data:application/octet-stream;base64,' + \
+        base64.b64encode(vertex_data).decode()
+    vertexByteLength = 4 * (3 + 2) + (0 if skip_color else 4 * 3)
+    vertex_data_buffer_view = pygltflib.BufferView(buffer=len(
+        gltf.buffers), byteOffset=0, byteStride=vertexByteLength, byteLength=vertex_data_buffer.byteLength, target=pygltflib.ARRAY_BUFFER)
+    pos_accessor = pygltflib.Accessor(bufferView=len(gltf.bufferViews), byteOffset=0, count=total_vertex_count,
+                                      componentType=pygltflib.FLOAT, type=pygltflib.VEC3, min=bounds[0], max=bounds[1])
+    uv_accessor = pygltflib.Accessor(bufferView=len(gltf.bufferViews), byteOffset=4*3,
+                                     count=total_vertex_count, componentType=pygltflib.FLOAT, type=pygltflib.VEC2)
+    accessors = [len(gltf.accessors), len(gltf.accessors) + 1]
+    if not skip_color:
+        color_accessor = pygltflib.Accessor(bufferView=len(gltf.bufferViews), byteOffset=4*(
+            3+2), count=total_vertex_count, componentType=pygltflib.FLOAT, type=pygltflib.VEC3)
+        accessors.append(len(gltf.accessors) + 2)
+    gltf.buffers.append(vertex_data_buffer)
+    gltf.bufferViews.append(vertex_data_buffer_view)
+    gltf.accessors.append(pos_accessor)
+    gltf.accessors.append(uv_accessor)
+    if not skip_color:
+        gltf.accessors.append(color_accessor)
+
+    return material_to_surfaces, accessors
+
+
+def _add_triangles_to_gltf(gltf, material_to_surfaces, accessors, skip_color=False):
+    mesh = pygltflib.Mesh()
+
+    index_data = bytearray()
+    total_index_count = 0
+    index_data_buffer_view_index = len(gltf.bufferViews)
+    for material, surfaces in material_to_surfaces.items():
+        local_index_count = 0
+        for surface in surfaces:
+            base_vertex, local_vertex_count = surface
+            for i in range(2, local_vertex_count):
+                index_data.extend(struct.pack(
+                    'III', base_vertex, base_vertex + i - 1, base_vertex + i))
+                local_index_count += 3
+
+        index_accessor_index = len(gltf.accessors)
+        index_accessor = pygltflib.Accessor(bufferView=index_data_buffer_view_index, byteOffset=4*total_index_count,
+                                            count=local_index_count, componentType=pygltflib.UNSIGNED_INT, type=pygltflib.SCALAR)
+        total_index_count += local_index_count
+        gltf.accessors.append(index_accessor)
+
+        primitive = pygltflib.Primitive(
+            material=material, indices=index_accessor_index)
+        primitive.attributes.POSITION = accessors[0]
+        primitive.attributes.TEXCOORD_0 = accessors[1]
+        if not skip_color:
+            primitive.attributes.COLOR_0 = accessors[2]
+        mesh.primitives.append(primitive)
+
+    index_data_buffer = pygltflib.Buffer(byteLength=len(index_data))
+    index_data_buffer.uri = 'data:application/octet-stream;base64,' + \
+        base64.b64encode(index_data).decode()
+    index_data_buffer_view = pygltflib.BufferView(buffer=len(
+        gltf.buffers), byteOffset=0, byteLength=index_data_buffer.byteLength, target=pygltflib.ELEMENT_ARRAY_BUFFER)
+    gltf.buffers.append(index_data_buffer)
+    gltf.bufferViews.append(index_data_buffer_view)
+
+    return mesh
+
+
 def _extract_map(zip_url):
     zip_path = _fetch_zip(zip_url)
     map_info = {'version': VERSION, 'title': 'Unknown', 'maps': []}
@@ -81,51 +247,56 @@ def _extract_map(zip_url):
             info = episode.read_from_bytes(vfs.zip_gobs.read(b'episode.jk'))
             map_info['title'] = info.title.decode()
 
-            # then try loading the references levels
+            # then try loading the referenced levels
             for levelname in info.levels:
                 try:
                     episode_id = len(map_info['maps'])
                     surfaces, model_surfaces, sky_surfaces, materials, spawn_points = loader.load_level(
                         b'jkl/' + levelname, vfs)
 
-                    # divide vertex UVs by texture sizes
                     for src in [surfaces, model_surfaces, sky_surfaces]:
-                        for surf in src:
-                            mat = materials[surf['material']]
-                            if mat and 'dims' in mat:
-                                sclu = 1.0 / mat['dims'][0]
-                                sclv = 1.0 / mat['dims'][1]
-                                for v in surf['vertices']:
-                                    v[1] = (v[1][0] * sclu, v[1][1] * sclv)
+                        _normalize_uvs(src, materials)
+                        _make_materials_for_translucent_surfaces(
+                            src, materials)
 
-                    # write material data to mat.js
-                    material_data = []
-                    for mat in materials:
-                        if mat:
-                            data = _encode_image(mat['image'], mat['mime'])
-                            material_data.append(
-                                {'data': data, 'name': mat['name'].decode()})
-                        else:
-                            material_data.append({'data': '', 'name': ''})
-                    _write_cache_atomically(
-                        zip_url, episode_id, 'mat.json', 'wt', json.dumps(material_data))
+                    gltf = pygltflib.GLTF2()
+                    _add_materials_to_gltf(gltf, materials)
 
-                    # assemble map data
-                    material_colors = [_encode_color(
-                        mat['color']) if mat else '#000000' for mat in materials]
-                    map_data = {'surfaces': surfaces, 'model_surfaces': model_surfaces, 'sky_surfaces': sky_surfaces,
-                                'material_colors': material_colors, 'spawn_points': spawn_points}
+                    material_to_surfaces, accessors = _add_vertices_to_gltf(
+                        gltf, surfaces, model_surfaces)
+                    mesh = _add_triangles_to_gltf(
+                        gltf, material_to_surfaces, accessors)
+                    node = pygltflib.Node(mesh=len(gltf.meshes))
+                    node_index = len(gltf.nodes)
+                    gltf.meshes.append(mesh)
+                    gltf.nodes.append(node)
+
+                    material_to_surfaces, accessors = _add_vertices_to_gltf(
+                        gltf, sky_surfaces)
+                    mesh = _add_triangles_to_gltf(
+                        gltf, material_to_surfaces, accessors)
+                    sky_node = pygltflib.Node(mesh=len(gltf.meshes))
+                    sky_node_index = len(gltf.nodes)
+                    gltf.meshes.append(mesh)
+                    gltf.nodes.append(sky_node)
+
+                    scene = pygltflib.Scene(nodes=[node_index, sky_node_index])
+                    gltf.scenes.append(scene)
+
                     _write_cache_atomically(
-                        zip_url, episode_id, 'map.json', 'wt', json.dumps(map_data))
+                        zip_url, episode_id, 'map.glb', 'wb', b"".join(gltf.save_to_bytes()))
 
                     if levelname.endswith(b'.jkl'):
                         levelname = levelname[:-4]  # drop .jkl suffix
-                    map_info['maps'].append(levelname.decode())
+                    map_info['maps'].append(
+                        {'name': levelname.decode(), 'spawnpoints': spawn_points})
                 except:
-                    if DEVELOPMENT_MODE: raise
+                    if DEVELOPMENT_MODE:
+                        raise
                     pass  # try the other maps in the episode
     except:
-        if DEVELOPMENT_MODE: raise
+        if DEVELOPMENT_MODE:
+            raise
         pass  # well ... not much we can do
     finally:
         # always write the file to avoid retrying the extraction
@@ -164,45 +335,39 @@ def _extract_skin(zip_url):
                 model_paths_and_names.append((b'ky.3do', 'Kyle Katarn'))
 
             model_paths = [m[0] for m in model_paths_and_names]
-            surfaces, materials = loader.load_models(model_paths, vfs, throw_on_error=DEVELOPMENT_MODE)
+            surfaces, materials = loader.load_models(
+                model_paths, vfs, throw_on_error=DEVELOPMENT_MODE)
 
             for i, model in enumerate(model_paths_and_names):
                 if surfaces[i] is None:
                     continue
 
                 skin_info['skins'].append(model[1])
+                _normalize_uvs(surfaces[i], materials)
+                _make_materials_for_translucent_surfaces(
+                    surfaces[i], materials)
 
-                # divide vertex UVs by texture sizes
-                for surf in surfaces[i]:
-                    mat = materials[surf['material']]
-                    if mat and 'dims' in mat:
-                        sclu = 1.0 / mat['dims'][0]
-                        sclv = 1.0 / mat['dims'][1]
-                        for v in surf['vertices']:
-                            v[1] = (v[1][0] * sclu, v[1][1] * sclv)
+            gltf = pygltflib.GLTF2()
+            _add_materials_to_gltf(gltf, materials)
 
-            # write material data to mat.js
-            material_data = []
-            for mat in materials:
-                if mat:
-                    data = _encode_image(mat['image'], mat['mime']) if (
-                        'image' in mat) else ''
-                    material_data.append(
-                        {'data': data, 'name': mat['name'].decode()})
-                else:
-                    material_data.append({'data': '', 'name': ''})
+            for i, model in enumerate(model_paths_and_names):
+                material_to_surfaces, accessors = _add_vertices_to_gltf(
+                    gltf, surfaces[i], skip_color=True)
+                mesh = _add_triangles_to_gltf(
+                    gltf, material_to_surfaces, accessors, skip_color=True)
+                node = pygltflib.Node(mesh=len(gltf.meshes))
+                node_index = len(gltf.nodes)
+                gltf.meshes.append(mesh)
+                gltf.nodes.append(node)
+
+                scene = pygltflib.Scene(nodes=[node_index])
+                gltf.scenes.append(scene)
+
             _write_cache_atomically(
-                zip_url, 0, 'skinmat.json', 'wt', json.dumps(material_data))
-
-            # assemble skins data
-            material_colors = [_encode_color(
-                mat['color']) if mat else '#000000' for mat in materials]
-            skins_data = {'surfaces': [
-                s for s in surfaces if s is not None], 'material_colors': material_colors}
-            _write_cache_atomically(
-                zip_url, 0, 'skins.json', 'wt', json.dumps(skins_data))
+                zip_url, 0, 'skins.glb', 'wb', b"".join(gltf.save_to_bytes()))
     except:
-        if DEVELOPMENT_MODE: raise
+        if DEVELOPMENT_MODE:
+            raise
         pass  # well ... not much we can do
     finally:
         # always write the file to avoid retrying the extraction
@@ -229,20 +394,13 @@ def _get_zip_url():
     return url
 
 
-@app.route('/level/map.json')
+@app.route('/level/map.glb')
 def root_level_map_data():
     zip_url = _get_zip_url()
     episode_id = int(request.args.get('episode', 0))
     cache_key = _get_cache_key(zip_url)
-    return send_from_directory('cache', '{0}-{1}-{2}'.format(cache_key, episode_id, 'map.json'))
-
-
-@app.route('/level/mat.json')
-def root_level_material_data():
-    zip_url = _get_zip_url()
-    episode_id = int(request.args.get('episode', 0))
-    cache_key = _get_cache_key(zip_url)
-    return send_from_directory('cache', '{0}-{1}-{2}'.format(cache_key, episode_id, 'mat.json'))
+    filename = '{0}-{1}-{2}'.format(cache_key, episode_id, 'map.glb')
+    return send_from_directory('cache', filename, mimetype="model/gltf-binary")
 
 
 def _get_mapinfo(zip_url):
@@ -263,18 +421,21 @@ def root_level_viewer():
     episode_id = int(request.args.get('episode', 0))
     map_info = _get_mapinfo(zip_url)
 
-    mapjs_url = 'map.json?version={0}&url={1}&episode={2}'.format(
-        VERSION, zip_url, episode_id)
-    matjs_url = 'mat.json?version={0}&url={1}&episode={2}'.format(
+    map_glb = 'map.glb?version={0}&url={1}&episode={2}'.format(
         VERSION, zip_url, episode_id)
 
     maps = []
     for i, map in enumerate(map_info['maps']):
         episode_url = '?url={0}&episode={1}'.format(zip_url, i)
-        maps.append([map, episode_url])
+        maps.append([map['name'], episode_url])
+
+    try:
+        spawn_points = map_info['maps'][episode_id]['spawnpoints']
+    except:
+        spawn_points = []
 
     return render_template('viewer.html', title=map_info['title'], maps=json.dumps(maps),
-                           map_js=mapjs_url, mat_js=matjs_url)
+                           spawn_points=json.dumps(spawn_points), map_glb=map_glb)
 
 
 def _get_skininfo(zip_url):
@@ -289,24 +450,17 @@ def _get_skininfo(zip_url):
     return _extract_skin(zip_url)
 
 
-@app.route('/skins/skins.json')
+@app.route('/skins/skins.glb')
 def root_skin_skins_data():
     zip_url = _get_zip_url()
     cache_key = _get_cache_key(zip_url)
-    return send_from_directory('cache', '{0}-{1}-{2}'.format(cache_key, 0, 'skins.json'))
-
-
-@app.route('/skins/mat.json')
-def root_skin_material_data():
-    zip_url = _get_zip_url()
-    cache_key = _get_cache_key(zip_url)
-    return send_from_directory('cache', '{0}-{1}-{2}'.format(cache_key, 0, 'skinmat.json'))
+    filename = '{0}-{1}-{2}'.format(cache_key, 0, 'skins.glb')
+    return send_from_directory('cache', filename, mimetype="model/gltf-binary")
 
 
 @app.route('/skins/')
 def root_skin_viewer():
     zip_url = _get_zip_url()
     skin_info = _get_skininfo(zip_url)
-    skinsjs_url = 'skins.json?version={0}&url={1}'.format(VERSION, zip_url)
-    matjs_url = 'mat.json?version={0}&url={1}'.format(VERSION, zip_url)
-    return render_template('skinviewer.html', skins=json.dumps(skin_info['skins']), skins_js=skinsjs_url, mat_js=matjs_url)
+    skins_glb = 'skins.glb?version={0}&url={1}'.format(VERSION, zip_url)
+    return render_template('skinviewer.html', skins=json.dumps(skin_info['skins']), skins_glb=skins_glb)
