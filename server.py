@@ -144,14 +144,33 @@ def _add_materials_to_gltf(gltf, materials):
         gltf.materials.append(material)
 
 
-def _add_vertices_to_gltf(gltf, *surface_sources, **kwargs):
-    material_to_surfaces = {}
+def _add_surfaces_to_gltf(gltf, *surface_sources, **kwargs):
+    mesh = pygltflib.Mesh()
     skip_color = kwargs.get('skip_color', False)
 
-    vertex_data = bytearray()
-    total_vertex_count = 0
-    bounds = None
+    material_to_surfaces = {}
     for surfaces in surface_sources:
+        for surf in surfaces:
+            if not surf['material'] in material_to_surfaces:
+                material_to_surfaces[surf['material']] = []
+            material_to_surfaces[surf['material']].append(surf)
+
+    vertex_data = bytearray()
+    vertex_data_buffer_view = len(gltf.bufferViews)
+    total_vertex_count = 0
+    vertexByteLength = 4 * (3 + 2) + (0 if skip_color else 4 * 3)
+
+    index_data = bytearray()
+    index_data_buffer_view_index = len(gltf.bufferViews) + 1
+    total_index_count = 0
+
+    for material, surfaces in material_to_surfaces.items():
+        bounds = None
+        index_count = 0
+        vertex_count = 0
+        vertex_data_buffer_offset = total_vertex_count * vertexByteLength
+        index_data_buffer_offset = total_index_count * 4
+
         for surf in surfaces:
             for v in surf['vertices']:
                 if bounds is None:
@@ -161,62 +180,38 @@ def _add_vertices_to_gltf(gltf, *surface_sources, **kwargs):
                     bounds[1] = [max(bounds[1][i], v[0][i]) for i in range(3)]
 
                 vertex_data.extend(struct.pack('fff', *v[0]))
-                vertex_data.extend(struct.pack('ff', v[1][0], -v[1][1]))  # flipY
+                vertex_data.extend(struct.pack(
+                    'ff', v[1][0], -v[1][1]))  # flipY
                 if not skip_color:
                     for i in range(3):
                         vertex_data.extend(struct.pack(
                             'f', max(0, min(1, v[2][i]))))
+            local_vertex_count = len(surf['vertices'])
 
-            if not surf['material'] in material_to_surfaces:
-                material_to_surfaces[surf['material']] = []
-            material_to_surfaces[surf['material']].append(
-                (total_vertex_count, len(surf['vertices'])))
-            total_vertex_count += len(surf['vertices'])
-
-    vertex_data_buffer = pygltflib.Buffer(byteLength=len(vertex_data))
-    vertex_data_buffer.uri = 'data:application/octet-stream;base64,' + \
-        base64.b64encode(vertex_data).decode()
-    vertexByteLength = 4 * (3 + 2) + (0 if skip_color else 4 * 3)
-    vertex_data_buffer_view = pygltflib.BufferView(buffer=len(
-        gltf.buffers), byteOffset=0, byteStride=vertexByteLength, byteLength=vertex_data_buffer.byteLength, target=pygltflib.ARRAY_BUFFER)
-    pos_accessor = pygltflib.Accessor(bufferView=len(gltf.bufferViews), byteOffset=0, count=total_vertex_count,
-                                      componentType=pygltflib.FLOAT, type=pygltflib.VEC3, min=bounds[0], max=bounds[1])
-    uv_accessor = pygltflib.Accessor(bufferView=len(gltf.bufferViews), byteOffset=4*3,
-                                     count=total_vertex_count, componentType=pygltflib.FLOAT, type=pygltflib.VEC2)
-    accessors = [len(gltf.accessors), len(gltf.accessors) + 1]
-    if not skip_color:
-        color_accessor = pygltflib.Accessor(bufferView=len(gltf.bufferViews), byteOffset=4*(
-            3+2), count=total_vertex_count, componentType=pygltflib.FLOAT, type=pygltflib.VEC3)
-        accessors.append(len(gltf.accessors) + 2)
-    gltf.buffers.append(vertex_data_buffer)
-    gltf.bufferViews.append(vertex_data_buffer_view)
-    gltf.accessors.append(pos_accessor)
-    gltf.accessors.append(uv_accessor)
-    if not skip_color:
-        gltf.accessors.append(color_accessor)
-
-    return material_to_surfaces, accessors
-
-
-def _add_triangles_to_gltf(gltf, material_to_surfaces, accessors, skip_color=False):
-    mesh = pygltflib.Mesh()
-
-    index_data = bytearray()
-    total_index_count = 0
-    index_data_buffer_view_index = len(gltf.bufferViews)
-    for material, surfaces in material_to_surfaces.items():
-        local_index_count = 0
-        for surface in surfaces:
-            base_vertex, local_vertex_count = surface
             for i in range(2, local_vertex_count):
                 index_data.extend(struct.pack(
-                    'III', base_vertex, base_vertex + i - 1, base_vertex + i))
-                local_index_count += 3
+                    'III', vertex_count, vertex_count + i - 1, vertex_count + i))
+            local_index_count = 3 * (local_vertex_count - 2)
 
+            vertex_count += local_vertex_count
+            index_count += local_index_count
+
+        pos_accessor = pygltflib.Accessor(bufferView=vertex_data_buffer_view, byteOffset=vertex_data_buffer_offset, count=vertex_count,
+                                          componentType=pygltflib.FLOAT, type=pygltflib.VEC3, min=bounds[0], max=bounds[1])
+        uv_accessor = pygltflib.Accessor(bufferView=vertex_data_buffer_view, byteOffset=4*3+vertex_data_buffer_offset,
+                                         count=vertex_count, componentType=pygltflib.FLOAT, type=pygltflib.VEC2)
+        accessors = [len(gltf.accessors), len(gltf.accessors) + 1]
+        gltf.accessors.append(pos_accessor)
+        gltf.accessors.append(uv_accessor)
+        if not skip_color:
+            color_accessor = pygltflib.Accessor(bufferView=vertex_data_buffer_view, byteOffset=4*(
+                3+2)+vertex_data_buffer_offset, count=vertex_count, componentType=pygltflib.FLOAT, type=pygltflib.VEC3)
+            accessors.append(len(gltf.accessors))
+            gltf.accessors.append(color_accessor)
+
+        index_accessor = pygltflib.Accessor(bufferView=index_data_buffer_view_index, byteOffset=index_data_buffer_offset,
+                                            count=index_count, componentType=pygltflib.UNSIGNED_INT, type=pygltflib.SCALAR)
         index_accessor_index = len(gltf.accessors)
-        index_accessor = pygltflib.Accessor(bufferView=index_data_buffer_view_index, byteOffset=4*total_index_count,
-                                            count=local_index_count, componentType=pygltflib.UNSIGNED_INT, type=pygltflib.SCALAR)
-        total_index_count += local_index_count
         gltf.accessors.append(index_accessor)
 
         primitive = pygltflib.Primitive(
@@ -226,6 +221,17 @@ def _add_triangles_to_gltf(gltf, material_to_surfaces, accessors, skip_color=Fal
         if not skip_color:
             primitive.attributes.COLOR_0 = accessors[2]
         mesh.primitives.append(primitive)
+
+        total_vertex_count += vertex_count
+        total_index_count += index_count
+
+    vertex_data_buffer = pygltflib.Buffer(byteLength=len(vertex_data))
+    vertex_data_buffer.uri = 'data:application/octet-stream;base64,' + \
+        base64.b64encode(vertex_data).decode()
+    vertex_data_buffer_view = pygltflib.BufferView(buffer=len(
+        gltf.buffers), byteOffset=0, byteStride=vertexByteLength, byteLength=vertex_data_buffer.byteLength, target=pygltflib.ARRAY_BUFFER)
+    gltf.buffers.append(vertex_data_buffer)
+    gltf.bufferViews.append(vertex_data_buffer_view)
 
     index_data_buffer = pygltflib.Buffer(byteLength=len(index_data))
     index_data_buffer.uri = 'data:application/octet-stream;base64,' + \
@@ -262,19 +268,14 @@ def _extract_map(zip_url):
                     gltf = pygltflib.GLTF2()
                     _add_materials_to_gltf(gltf, materials)
 
-                    material_to_surfaces, accessors = _add_vertices_to_gltf(
+                    mesh = _add_surfaces_to_gltf(
                         gltf, surfaces, model_surfaces)
-                    mesh = _add_triangles_to_gltf(
-                        gltf, material_to_surfaces, accessors)
                     node = pygltflib.Node(mesh=len(gltf.meshes))
                     node_index = len(gltf.nodes)
                     gltf.meshes.append(mesh)
                     gltf.nodes.append(node)
 
-                    material_to_surfaces, accessors = _add_vertices_to_gltf(
-                        gltf, sky_surfaces)
-                    mesh = _add_triangles_to_gltf(
-                        gltf, material_to_surfaces, accessors)
+                    mesh = _add_surfaces_to_gltf(gltf, sky_surfaces)
                     sky_node = pygltflib.Node(mesh=len(gltf.meshes))
                     sky_node_index = len(gltf.nodes)
                     gltf.meshes.append(mesh)
@@ -351,10 +352,8 @@ def _extract_skin(zip_url):
             _add_materials_to_gltf(gltf, materials)
 
             for i, model in enumerate(model_paths_and_names):
-                material_to_surfaces, accessors = _add_vertices_to_gltf(
+                mesh = _add_surfaces_to_gltf(
                     gltf, surfaces[i], skip_color=True)
-                mesh = _add_triangles_to_gltf(
-                    gltf, material_to_surfaces, accessors, skip_color=True)
                 node = pygltflib.Node(mesh=len(gltf.meshes))
                 node_index = len(gltf.nodes)
                 gltf.meshes.append(mesh)
