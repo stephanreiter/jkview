@@ -16,3 +16,8 @@ ALLOWED_URL_PREFIXES = [
     'https://www.jkdf2.net/JKBot/JKArchive/JKDF2/JKDF2/',
     'https://jkdf2.net/JKBot/JKArchive/JKDF2/JKDF2/',
 ]
+
+# Set the path to the gltfpack binary from https://meshoptimizer.org/gltf/
+# to invoke the tool for maps and skins: It optimizes them for size and rendering speed.
+# Set to None to not use gltfpack.
+GLTFPACK_PATH = None

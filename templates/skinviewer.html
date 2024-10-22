@@ -106,6 +106,7 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        {% if gltfpacked %}import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';{% endif %}
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         var isTouchDevice = (('ontouchstart' in window)
@@ -213,6 +214,7 @@
 
         progress.animate(skinLoadProgress(0));
         const loader = new GLTFLoader();
+        {% if gltfpacked %} loader.setMeshoptDecoder(MeshoptDecoder); {% endif %}
         loader.load('{{ skins_glb|safe }}',
             function (gltf) {
                 loadSkins(gltf);

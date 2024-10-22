@@ -12,6 +12,7 @@ import re
 import requests
 import shutil
 import struct
+import subprocess
 import tempfile
 import urllib.parse
 
@@ -55,12 +56,28 @@ def _write_cache_atomically(zip_url, episode_id, filename, mode, data):
             raise
 
 
-def _encode_image(data, mime):
-    return 'data:' + mime + ';base64,' + base64.b64encode(data).decode()
+def _run_gltfpack(input_file_name, output_file_name):
+    # extra flags:
+    # -cc ... produce compressed gltf/glb files
+    # -kn ... keep named nodes and meshes attached to named nodes (sky, individual skins)
+    subprocess.run([GLTFPACK_PATH, '-i', input_file_name, '-o',
+                   output_file_name, '-cc', '-kn'], check=True, timeout=60)
 
 
-def _encode_color(tuple):
-    return '#%02x%02x%02x' % (tuple[0], tuple[1], tuple[2])
+def _write_optimized_glb_to_cache(zip_url, episode_id, filename, data):
+    # Write data to a temporary named file, invoke gltfpack to generate another
+    # named temporary file. Then move that file atomically to the cache directory
+    target_path = _get_cache_filename(zip_url, episode_id, filename)
+    with tempfile.NamedTemporaryFile(suffix='.glb', delete=True) as tmp_input_file:
+        with open(tmp_input_file.name, 'wb') as f:
+            f.write(data)
+        with tempfile.NamedTemporaryFile(suffix='.glb', delete=False) as tmp_file:
+            try:
+                _run_gltfpack(tmp_input_file.name, tmp_file.name)
+                shutil.move(tmp_file.name, target_path)
+            except:
+                os.remove(tmp_file.name)
+                raise
 
 
 def _fetch_zip(zip_url):
@@ -271,6 +288,7 @@ def _extract_map(zip_url):
                     mesh = _add_surfaces_to_gltf(
                         gltf, surfaces, model_surfaces)
                     node = pygltflib.Node(mesh=len(gltf.meshes))
+                    node.name = mesh.name = 'map'
                     nodes = [len(gltf.nodes)]
                     gltf.meshes.append(mesh)
                     gltf.nodes.append(node)
@@ -278,6 +296,7 @@ def _extract_map(zip_url):
                     if sky_surfaces:
                         mesh = _add_surfaces_to_gltf(gltf, sky_surfaces)
                         sky_node = pygltflib.Node(mesh=len(gltf.meshes))
+                        sky_node.name = mesh.name = 'sky'
                         nodes.append(len(gltf.nodes))
                         gltf.meshes.append(mesh)
                         gltf.nodes.append(sky_node)
@@ -285,8 +304,12 @@ def _extract_map(zip_url):
                     scene = pygltflib.Scene(nodes=nodes)
                     gltf.scenes.append(scene)
 
-                    _write_cache_atomically(
-                        zip_url, episode_id, 'map.glb', 'wb', b"".join(gltf.save_to_bytes()))
+                    if GLTFPACK_PATH is None:
+                        _write_cache_atomically(
+                            zip_url, episode_id, 'map.glb', 'wb', b"".join(gltf.save_to_bytes()))
+                    else:
+                        _write_optimized_glb_to_cache(
+                            zip_url, episode_id, 'map.glb', b"".join(gltf.save_to_bytes()))
 
                     if levelname.endswith(b'.jkl'):
                         levelname = levelname[:-4]  # drop .jkl suffix
@@ -356,6 +379,7 @@ def _extract_skin(zip_url):
                 mesh = _add_surfaces_to_gltf(
                     gltf, surfaces[i], skip_color=True)
                 node = pygltflib.Node(mesh=len(gltf.meshes))
+                node.name = mesh.name = f'skin_{i}'
                 node_index = len(gltf.nodes)
                 gltf.meshes.append(mesh)
                 gltf.nodes.append(node)
@@ -363,8 +387,12 @@ def _extract_skin(zip_url):
                 scene = pygltflib.Scene(nodes=[node_index])
                 gltf.scenes.append(scene)
 
-            _write_cache_atomically(
-                zip_url, 0, 'skins.glb', 'wb', b"".join(gltf.save_to_bytes()))
+            if GLTFPACK_PATH is None:
+                _write_cache_atomically(
+                    zip_url, 0, 'skins.glb', 'wb', b"".join(gltf.save_to_bytes()))
+            else:
+                _write_optimized_glb_to_cache(
+                    zip_url, 0, 'skins.glb', b"".join(gltf.save_to_bytes()))
     except:
         if DEVELOPMENT_MODE:
             raise
@@ -434,8 +462,9 @@ def root_level_viewer():
     except:
         spawn_points = []
 
+    gltfpacked = GLTFPACK_PATH is not None
     return render_template('viewer.html', title=map_info['title'], maps=json.dumps(maps),
-                           spawn_points=json.dumps(spawn_points), map_glb=map_glb)
+                           spawn_points=json.dumps(spawn_points), map_glb=map_glb, gltfpacked=gltfpacked)
 
 
 def _get_skininfo(zip_url):
@@ -463,4 +492,5 @@ def root_skin_viewer():
     zip_url = _get_zip_url()
     skin_info = _get_skininfo(zip_url)
     skins_glb = 'skins.glb?version={0}&url={1}'.format(VERSION, zip_url)
-    return render_template('skinviewer.html', skins=json.dumps(skin_info['skins']), skins_glb=skins_glb)
+    gltfpacked = GLTFPACK_PATH is not None
+    return render_template('skinviewer.html', skins=json.dumps(skin_info['skins']), skins_glb=skins_glb, gltfpacked=gltfpacked)
