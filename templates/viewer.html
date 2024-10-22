@@ -265,7 +265,7 @@
             controls.target.copy(center);
             controls.enabled = true;
             controls.update();
-            skyMesh.visible = false;
+            if (skyMesh) skyMesh.visible = false;
             clearTarget();
             animate();
         }
@@ -283,7 +283,7 @@
             fpsControls.target.copy(new THREE.Vector3(pos[0] + dir[0], pos[1] + dir[1], pos[2] + offsetZ + dir[2]));
             fpsControls.enabled = true;
             fpsControls.update();
-            skyMesh.visible = true;
+            if (skyMesh) skyMesh.visible = true;
             clearTarget();
             animate();
         }
@@ -313,24 +313,27 @@
 
         function loadMap(gltf) {
             mesh = gltf.scene.children[0];
-            skyMesh = gltf.scene.children[1];
-            skyMesh.visible = false;
 
-            var skyVertexShader = document.getElementById('skyvs').textContent;
-            var skyFragmentShader = document.getElementById('skyfs').textContent;
-            skyMesh.traverse(function (object) {
-                if (object instanceof THREE.Mesh) {
-                    var tex = object.material.map;
-                    object.material = new THREE.ShaderMaterial({
-                        vertexShader: skyVertexShader,
-                        fragmentShader: skyFragmentShader,
-                        uniforms: {
-                            u_texture: { type: 't', value: tex },
-                            u_inverseProjectionViewMatrix: { value: inverseProjectionViewMatrix }
-                        },
-                    });
-                }
-            });
+            if (gltf.scene.children.length > 1) {
+                skyMesh = gltf.scene.children[1];
+                skyMesh.visible = false;
+
+                var skyVertexShader = document.getElementById('skyvs').textContent;
+                var skyFragmentShader = document.getElementById('skyfs').textContent;
+                skyMesh.traverse(function (object) {
+                    if (object instanceof THREE.Mesh) {
+                        var tex = object.material.map;
+                        object.material = new THREE.ShaderMaterial({
+                            vertexShader: skyVertexShader,
+                            fragmentShader: skyFragmentShader,
+                            uniforms: {
+                                u_texture: { type: 't', value: tex },
+                                u_inverseProjectionViewMatrix: { value: inverseProjectionViewMatrix }
+                            },
+                        });
+                    }
+                });
+            }
 
             scene.add(gltf.scene);
 

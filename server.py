@@ -271,17 +271,18 @@ def _extract_map(zip_url):
                     mesh = _add_surfaces_to_gltf(
                         gltf, surfaces, model_surfaces)
                     node = pygltflib.Node(mesh=len(gltf.meshes))
-                    node_index = len(gltf.nodes)
+                    nodes = [len(gltf.nodes)]
                     gltf.meshes.append(mesh)
                     gltf.nodes.append(node)
 
-                    mesh = _add_surfaces_to_gltf(gltf, sky_surfaces)
-                    sky_node = pygltflib.Node(mesh=len(gltf.meshes))
-                    sky_node_index = len(gltf.nodes)
-                    gltf.meshes.append(mesh)
-                    gltf.nodes.append(sky_node)
+                    if sky_surfaces:
+                        mesh = _add_surfaces_to_gltf(gltf, sky_surfaces)
+                        sky_node = pygltflib.Node(mesh=len(gltf.meshes))
+                        nodes.append(len(gltf.nodes))
+                        gltf.meshes.append(mesh)
+                        gltf.nodes.append(sky_node)
 
-                    scene = pygltflib.Scene(nodes=[node_index, sky_node_index])
+                    scene = pygltflib.Scene(nodes=nodes)
                     gltf.scenes.append(scene)
 
                     _write_cache_atomically(
