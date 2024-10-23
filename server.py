@@ -60,8 +60,9 @@ def _run_gltfpack(input_file_name, output_file_name):
     # extra flags:
     # -cc ... produce compressed gltf/glb files
     # -kn ... keep named nodes and meshes attached to named nodes (sky, individual skins)
+    # -tc ... create KTX2 compressed textures
     subprocess.run([GLTFPACK_PATH, '-i', input_file_name, '-o',
-                   output_file_name, '-cc', '-kn'], check=True, timeout=60)
+                   output_file_name, '-cc', '-kn', '-tc'], check=True, timeout=60)
 
 
 def _write_optimized_glb_to_cache(zip_url, episode_id, filename, data):

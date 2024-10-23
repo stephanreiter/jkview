@@ -106,7 +106,10 @@
     <script type="module">
         import * as THREE from 'three';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        {% if gltfpacked %}import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';{% endif %}
+        {% if gltfpacked %}
+        import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
+        import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+        {% endif %}
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         var isTouchDevice = (('ontouchstart' in window)
@@ -214,7 +217,13 @@
 
         progress.animate(skinLoadProgress(0));
         const loader = new GLTFLoader();
-        {% if gltfpacked %} loader.setMeshoptDecoder(MeshoptDecoder); {% endif %}
+        {% if gltfpacked %}
+        loader.setMeshoptDecoder(MeshoptDecoder);
+        var ktx2Loader = new KTX2Loader();
+        ktx2Loader.setTranscoderPath('https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/libs/basis/');
+        ktx2Loader.detectSupport(renderer);
+        loader.setKTX2Loader(ktx2Loader);
+        {% endif %}
         loader.load('{{ skins_glb|safe }}',
             function (gltf) {
                 loadSkins(gltf);
