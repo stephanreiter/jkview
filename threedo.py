@@ -189,7 +189,10 @@ class ThreedoFile:
                     vertices.append([pos, uv, diffuse, norm])
 
                 if twosided:
-                    vertices.extend(reversed(vertices))
+                    for v in reversed(vertices[1:-1]):
+                        v = list(v)  # copy vertex to flip normal
+                        v[3] = (-v[3][0], -v[3][1], -v[3][2])
+                        vertices.append(v)
 
                 curmesh[key] = {'vertices': vertices, 'geo': geo,
                                 'material': mat, 'translucent': translucent}

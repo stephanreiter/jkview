@@ -185,7 +185,7 @@ class JklFile:
                     vertices.append([xyzs[xyz_idx], uv, diffuse])
 
                 if twosided:
-                    vertices.extend(reversed(vertices))
+                    vertices.extend(reversed(vertices[1:-1]))
 
                 surfaces[key] = {
                     'vertices': vertices,
