@@ -228,7 +228,10 @@ def load_level(jkl_name, vfs):
             except:
                 continue  # model not found
 
-        sector = level.sectors[instance['sector']]
+        try:
+            sector = level.sectors[instance['sector']]
+        except KeyError:
+            continue
         model = _instantiate_model(
             models[filename], instance['pos'], instance['rot'], sector, level.lights, texcache)
         model_surfaces.extend(model)

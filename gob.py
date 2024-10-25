@@ -88,8 +88,8 @@ class MultiGob:
 
 
 class VirtualFileSystem:
-    def __init__(self, zip_handle, zip_gobs, official_gobs):
-        self.zip_handle = zip_handle
+    def __init__(self, extra_handles, zip_gobs, official_gobs):
+        self.extra_handles = extra_handles
         self.zip_gobs = MultiGob(zip_gobs)
         # Order matters: let level specific gobs override official resources.
         # This is relevant, for example, for the Blue Rain level (375): it has its own 3do/tree.3do.
@@ -105,7 +105,8 @@ class VirtualFileSystem:
     def close(self):
         for gob in self.gobs:
             gob.close()
-        self.zip_handle.close()
+        for f in self.extra_handles:
+            f.close()
 
     def ls(self):
         return self.multi_gob.ls()
@@ -170,48 +171,62 @@ def _try_build_virtual_gob(zip_file):
     return ZipGob(zip_file, file_infos) if file_infos else None
 
 
-def _open_gobs_in_zip(zip_filename):
-    zip_file = zipfile.ZipFile(zip_filename)
+def _open_gobs_in_zip(zip_file):
+    open_files = []
     try:
-        open_files = []
-        try:
-            # locate gob and goo (MotS) files and open them
-            gobs = []
-            for info in zip_file.infolist():
-                if info.is_dir():
-                    continue
-                # case insensitive extension check:
-                filename = info.filename.lower()
-                if filename.endswith('.gob') or filename.endswith('.goo'):
-                    gob_file_handle = zip_file.open(info)
-                    open_files.append(gob_file_handle)
-                    gobs.append(GobFile(gob_file_handle))
+        # locate gob and goo (MotS) files and open them
+        gobs = []
+        for info in zip_file.infolist():
+            if info.is_dir():
+                continue
+            # case insensitive extension check:
+            filename = info.filename.lower()
+            if filename.endswith('.gob') or filename.endswith('.goo'):
+                gob_file_handle = zip_file.open(info)
+                open_files.append(gob_file_handle)
+                gobs.append(GobFile(gob_file_handle))
+            elif filename.endswith('.zip'):
+                # sometimes a zip is contained inside the zip ... :-/
+                zip_file_handle = zip_file.open(info)
+                open_files.append(zip_file_handle)
+                zip_handle = zipfile.ZipFile(zip_file_handle)
+                open_files.append(zip_handle)
+                zip_gobs = _open_gobs_in_zip(zip_handle)
+                gobs.append(VirtualFileSystem(
+                    [zip_handle, zip_file_handle], zip_gobs, []))
 
-            # some archives do not contains gobs, but rather files directly
-            # detect such archives and allow access to the files via a virtual gob
-            virtual_gob = _try_build_virtual_gob(zip_file)
-            if virtual_gob:
-                gobs.append(virtual_gob)
+        # some archives do not contains gobs, but rather files directly
+        # detect such archives and allow access to the files via a virtual gob
+        virtual_gob = _try_build_virtual_gob(zip_file)
+        if virtual_gob:
+            gobs.append(virtual_gob)
 
-            if len(gobs) == 0:
-                raise Exception("No GOBs in archive!")
-            return zip_file, gobs
-        except:
-            for f in open_files:
-                f.close()
-            raise
+        if len(gobs) == 0:
+            raise Exception("No GOBs in archive!")
+        return gobs
     except:
-        zip_file.close()
+        for f in reversed(open_files):
+            f.close()
         raise
 
 
 def open_zip(zip_filename):
-    zip_handle, zip_gobs = _open_gobs_in_zip(zip_filename)
-    return VirtualFileSystem(zip_handle, zip_gobs, [])
+    zip_handle = zipfile.ZipFile(zip_filename)
+    try:
+        zip_gobs = _open_gobs_in_zip(zip_handle)
+        return VirtualFileSystem([zip_handle], zip_gobs, [])
+    except:
+        zip_handle.close()
+        raise
 
 
 def open_game_gobs_and_zip(zip_filename):
-    zip_handle, zip_gobs = _open_gobs_in_zip(zip_filename)
+    zip_handle = zipfile.ZipFile(zip_filename)
+    try:
+        zip_gobs = _open_gobs_in_zip(zip_handle)
+    except:
+        zip_handle.close()
+        raise
 
     official_gobs = []
     for filename in OFFICIAL:
@@ -220,7 +235,7 @@ def open_game_gobs_and_zip(zip_filename):
         except:
             pass  # if not found, ignore it
 
-    return VirtualFileSystem(zip_handle, zip_gobs, official_gobs)
+    return VirtualFileSystem([zip_handle], zip_gobs, official_gobs)
 
 
 if __name__ == "__main__":

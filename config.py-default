@@ -8,7 +8,7 @@
 DEVELOPMENT_MODE = False
 
 # increment VERSION to invalidate caches
-VERSION = 13
+VERSION = 14
 
 # allowed prefixes for level URLs
 ALLOWED_URL_PREFIXES = [

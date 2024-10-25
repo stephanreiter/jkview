@@ -269,7 +269,7 @@ def _extract_map(zip_url):
         # read the episode.jk file from the archive
         with gob.open_game_gobs_and_zip(zip_path) as vfs:
             info = episode.read_from_bytes(vfs.zip_gobs.read(b'episode.jk'))
-            map_info['title'] = info.title.decode()
+            map_info['title'] = info.title.decode(errors='ignore')
 
             # then try loading the referenced levels
             for levelname in info.levels:
