@@ -319,6 +319,7 @@
                 progress.setText("Loading failed.");
                 progress.animate(1);
                 console.log(error);
+                continueToNext();
             }
         );
 
@@ -381,7 +382,7 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x444444);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
             renderer.setPixelRatio(window.devicePixelRatio);
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
@@ -519,11 +520,75 @@
                 progressDone = false;
                 hideProgress();
                 showInfo();
+                takeScreenshotIfRequested();
             }
             inverseProjectionViewMatrix.copy(camera.projectionMatrix);
             inverseProjectionViewMatrix.multiply(camera.matrixWorldInverse);
             inverseProjectionViewMatrix.invert();
             renderer.render(scene, camera);
+        }
+
+        var noScreenshots = JSON.parse({{ no_screenshots_map | tojson | safe }});
+
+        function screenshotThenContinue(key, url) {
+            camera.aspect = 800 / 600;
+            camera.updateProjectionMatrix();
+            renderer.setSize(400, 300);
+
+            var done = 0;
+            for (var s = 0; s < spawnPoints.length; ++s) {
+                function blobHandler(filename) {
+                    return function (blob) {
+                        var body = new FormData();
+                        body.append('file', blob, filename);
+                        fetch('/screenshot/', { method: "POST", body })
+                            .then(response => {
+                                done++;
+                                if (done == spawnPoints.length) {
+                                    console.log('Continuing to ' + url);
+                                    window.location = url;
+                                    return;
+                                }
+                            });
+                    };
+                }
+                var filename = key + '_' + (s+1) + '.jpg';
+                spawn();
+                render();
+                renderer.domElement.toBlob(blobHandler(filename), 'image/jpeg');
+            }
+        }
+
+        function takeScreenshotIfRequested() {
+            var urlParams = new URLSearchParams(window.location.search);
+            var noScreenshotIndex = urlParams.get('noscr')
+            if (noScreenshotIndex != null) {
+                noScreenshotIndex = parseInt(noScreenshotIndex);
+                var keys = Object.keys(noScreenshots);
+                var key = keys[noScreenshotIndex]
+                if (urlParams.get('url') != noScreenshots[key]) {
+                    var correctUrl = '/level/?url=' + noScreenshots[key] + '&noscr=' + noScreenshotIndex;
+                    console.log('Navigating to ' + correctUrl);
+                    window.location = correctUrl;
+                } else {
+                    var nextKey = keys[noScreenshotIndex + 1]
+                    var nextUrl = '/level/?url=' + noScreenshots[nextKey] + '&noscr=' + (noScreenshotIndex + 1);
+                    screenshotThenContinue(key, nextUrl);
+                }
+            }
+        }
+
+        function continueToNext() {
+            var urlParams = new URLSearchParams(window.location.search);
+            var noScreenshotIndex = urlParams.get('noscr')
+            if (noScreenshotIndex != null) {
+                noScreenshotIndex = parseInt(noScreenshotIndex);
+                var keys = Object.keys(noScreenshots);
+                var key = keys[noScreenshotIndex]
+                var nextKey = keys[noScreenshotIndex + 1]
+                var nextUrl = '/level/?url=' + noScreenshots[nextKey] + '&noscr=' + (noScreenshotIndex + 1);
+                window.location = nextUrl;
+            }
         }
     </script>
 

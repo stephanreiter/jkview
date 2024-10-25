@@ -463,9 +463,17 @@ def root_level_viewer():
     except:
         spawn_points = []
 
+    no_screenshots_map = {}
+    with open('noscreenshot-links.txt', 'rt') as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                key, url = line.split(',')
+                no_screenshots_map[key] = url
+
     gltfpacked = GLTFPACK_PATH is not None
     return render_template('viewer.html', title=map_info['title'], maps=json.dumps(maps),
-                           spawn_points=json.dumps(spawn_points), map_glb=map_glb, gltfpacked=gltfpacked)
+                           spawn_points=json.dumps(spawn_points), map_glb=map_glb, gltfpacked=gltfpacked, no_screenshots_map=json.dumps(no_screenshots_map))
 
 
 def _get_skininfo(zip_url):
@@ -495,3 +503,11 @@ def root_skin_viewer():
     skins_glb = 'skins.glb?version={0}&url={1}'.format(VERSION, zip_url)
     gltfpacked = GLTFPACK_PATH is not None
     return render_template('skinviewer.html', skins=json.dumps(skin_info['skins']), skins_glb=skins_glb, gltfpacked=gltfpacked)
+
+
+@app.route('/screenshot/', methods=['post'])
+def root_screenshot_receive():
+    files = request.files
+    file = files.get('file')
+    file.save(os.path.abspath(f'screenshots/{file.filename}'))
+    return {}
