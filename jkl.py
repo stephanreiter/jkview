@@ -5,10 +5,9 @@ SUBSECTION_RE = re.compile(br'(.+)\s+\d+\Z')  # [ITEM TYPE] [COUNT]EOL
 ITEM_RE = re.compile(br'(\d+):')  # [IDX]: ...
 CMP_RE = re.compile(br'(\d+):\s+(\S+)')  # [IDX]: [FILENAME]
 # [IDX]: [FILENAME] 1 1
-FLOAT_FRAGMENT = r'-?\d*(\.\d+)?(?:[eE][-+]?\d+)?'
-FLOAT_FRAGMENT2 = r'-?\d*(?:\.\d+)?(?:[eE][-+]?\d+)?'
+FLOAT_FRAGMENT = r'-?\d*(?:\.\d+)?(?:[eE][-+]?\d+)?'
 VECTOR_RE = re.compile(
-    fr'\(({FLOAT_FRAGMENT2})/({FLOAT_FRAGMENT2})/({FLOAT_FRAGMENT2})\)'.encode())
+    fr'\(({FLOAT_FRAGMENT})/({FLOAT_FRAGMENT})/({FLOAT_FRAGMENT})\)'.encode())
 MATERIAL_RE = re.compile(
     fr'(\d+):\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})'.encode())
 POSXYZ_RE = re.compile(
@@ -22,22 +21,23 @@ SECTOR_RE = re.compile(br'SECTOR\s+(\d+)')
 SECTOR_COLORMAP_RE = re.compile(br'COLORMAP\s+(\d+)')
 SECTOR_SURFACES_RE = re.compile(br'SURFACES\s+(\d+)\s+(\d+)')
 SECTOR_AMBIENT_LIGHT_RE = re.compile(
-    fr'AMBIENT\s+LIGHT\s+({FLOAT_FRAGMENT2})'.encode())
+    fr'AMBIENT\s+LIGHT\s+({FLOAT_FRAGMENT})'.encode())
 SECTOR_EXTRA_LIGHT_RE = re.compile(
-    fr'EXTRA\s+LIGHT\s+({FLOAT_FRAGMENT2})'.encode())
+    fr'EXTRA\s+LIGHT\s+({FLOAT_FRAGMENT})'.encode())
 
-TEMPLATE_RE = re.compile(br'(\S+)\s+(\S+)\s+(\D.+)\Z')
+IDENTIFIER_FRAGMENT = r'[^0-9\s]\S+'
+TEMPLATE_RE = re.compile(fr'({IDENTIFIER_FRAGMENT})\s+({IDENTIFIER_FRAGMENT})\s+(\D.+)\Z'.encode())
 THING_RE = re.compile(
-    fr'(\d+):\s+(\S+)\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+(-?\d+)(\s+-?\d+)?\s*(.*)'.encode())
+    fr'(\d+):\s+({IDENTIFIER_FRAGMENT})\s+(\S+)\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+({FLOAT_FRAGMENT})\s+(-?\d+)(\s+-?\d+)?\s*(.*)'.encode())
 
 
 def _get_surface_rest_re(nverts, mots):
     text = r'\s+'
     text += r'(-?\d+),\s*(-?\d+)\s+' * nverts
     if mots:
-        text += fr'({FLOAT_FRAGMENT2})\s+' * nverts * 3
-    text += fr'({FLOAT_FRAGMENT2})\s+' * (nverts - 1)
-    text += fr'({FLOAT_FRAGMENT2})'  # no trailing whitespace
+        text += fr'({FLOAT_FRAGMENT})\s+' * nverts * 3
+    text += fr'({FLOAT_FRAGMENT})\s+' * (nverts - 1)
+    text += fr'({FLOAT_FRAGMENT})'  # no trailing whitespace
     rest_re = re.compile(text.encode())
     return rest_re
 
@@ -57,9 +57,10 @@ def _parse_subsections(lines):
 
 
 def _get_light_config(config):
-    if b'thingflags' not in config:
+    thingflags = config.get(b'thingflags', b'')
+    if not thingflags.startswith(b'0x'):
         return None
-    if int(config[b'thingflags'][2:], 16) & 0x1 == 0:  # does not emit light
+    if int(thingflags[2:], 16) & 0x1 == 0:  # does not emit light
         return None
 
     light = float(config.get(b'light', b'0.0'))
@@ -103,9 +104,10 @@ class JklFile:
         mats = {}
         for line in ss[b'world materials']:
             match = MATERIAL_RE.match(line)
-            key = int(match.group(1))
-            name = match.group(2)
-            mats[key] = name
+            if match:
+                key = int(match.group(1))
+                name = match.group(2)
+                mats[key] = name
         self.materials = mats
 
     def _read_georesource(self, lines):
@@ -114,19 +116,21 @@ class JklFile:
         xyzs = {}
         for line in ss[b'world vertices']:
             match = POSXYZ_RE.match(line)
-            key = int(match.group(1))
-            x = float(match.group(2))
-            y = float(match.group(4))
-            z = float(match.group(6))
-            xyzs[key] = (x, y, z)
+            if match:
+                key = int(match.group(1))
+                x = float(match.group(2))
+                y = float(match.group(3))
+                z = float(match.group(4))
+                xyzs[key] = (x, y, z)
 
         uvs = {}
         for line in ss[b'world texture vertices']:
             match = TEXUV_RE.match(line)
-            key = int(match.group(1))
-            u = float(match.group(2))
-            v = float(match.group(4))
-            uvs[key] = (u, v)
+            if match:
+                key = int(match.group(1))
+                u = float(match.group(2))
+                v = float(match.group(3))
+                uvs[key] = (u, v)
 
         surfaces = {}
         mots = True
@@ -142,9 +146,9 @@ class JklFile:
                 # tex = int(match.group(7))
                 # adjoin = int(match.group(8))
                 extra_light = float(match.group(9))
-                nverts = int(match.group(11))
+                nverts = int(match.group(10))
 
-                rest = line[match.end(11):]
+                rest = line[match.end(10):]
 
                 uv_scale = 0.5 if (surfflags & 0x10) else 1
                 uv_scale *= 2 if (surfflags & 0x20) else 1
@@ -197,19 +201,21 @@ class JklFile:
 
             else:
                 match = POSXYZ_RE.match(line)  # normal vector
-                key = int(match.group(1))
-                x = float(match.group(2))
-                y = float(match.group(4))
-                z = float(match.group(6))
-                surfaces[key]['normal'] = (x, y, z)
+                if match:
+                    key = int(match.group(1))
+                    x = float(match.group(2))
+                    y = float(match.group(3))
+                    z = float(match.group(4))
+                    surfaces[key]['normal'] = (x, y, z)
 
         self.surfaces = surfaces
 
         cmps = {}
         for line in ss[b'world colormaps']:
             match = CMP_RE.match(line)
-            key = int(match.group(1))
-            cmps[key] = match.group(2)
+            if match:
+                key = int(match.group(1))
+                cmps[key] = match.group(2)
         self.colormaps = cmps
 
     def _read_sectors(self, lines):
@@ -249,8 +255,11 @@ class JklFile:
     def _read_config(self, text):
         config = {}
         for cfgpair in text.split():
-            k, v = cfgpair.split(b'=')
-            config[k] = v
+            try:
+                k, v = cfgpair.split(b'=')
+                config[k] = v
+            except ValueError:
+                continue  # not in form key=value
         return config
 
     def _read_templates(self, lines):
@@ -278,14 +287,14 @@ class JklFile:
                 template = match.group(2).lower()
                 # name = match.group(3)
                 x = float(match.group(4))
-                y = float(match.group(6))
-                z = float(match.group(8))
-                pitch = float(match.group(10))
-                yaw = float(match.group(12))
-                roll = float(match.group(14))
-                sector = int(match.group(16))
+                y = float(match.group(5))
+                z = float(match.group(6))
+                pitch = float(match.group(7))
+                yaw = float(match.group(8))
+                roll = float(match.group(9))
+                sector = int(match.group(10))
                 config = self._read_config(
-                    match.group(18)) if match.group(18) else {}
+                    match.group(12)) if match.group(12) else {}
                 if template in templates:
                     # merge: overwrite values of template with new ones
                     config = {**templates[template], **config}
