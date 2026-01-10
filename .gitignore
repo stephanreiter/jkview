@@ -6,3 +6,4 @@
 *.goo
 *.GOO
 config.py
+.DS_Store

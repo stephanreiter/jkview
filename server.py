@@ -107,6 +107,8 @@ def _make_materials_for_translucent_surfaces(surfaces, materials):
     variants = {}
     for surf in surfaces:
         mat = surf['material']
+        if not mat in materials:
+            continue  # missing material
         if mat not in variants:
             if surf['translucent']:
                 materials[mat]['translucent'] = True
